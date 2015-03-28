@@ -1,7 +1,9 @@
 RSF - RNA Structure Framework (v0.1.0)
+
 Epigenetics Unit @ HuGeF [Human Genetics Foundation]
 
 Group leader: Prof. Salvatore Oliviero (salvatore.oliviero[at]hugef-torino.org
+
 Author:       Danny Incarnato (danny.incarnato[at]hugef-torino.org)
 
 This program is free software, and can be redistribute  and/or modified
