@@ -1,0 +1,193 @@
+#!/usr/bin/perl
+
+##
+# SPD2PAGE (v0.1.0)
+# Epigenetics Unit @ HuGeF [Human Genetics Foundation]
+#
+# Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+# Summary: Generates simulated PAGE gel images from SPD files
+#
+# This program is free software, and can be redistribute  and/or modified
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# any later version.
+#
+# Please see <http://www.gnu.org/licenses/> for more informations.
+##
+
+
+use strict;
+use File::Basename;
+use FindBin qw($Bin);
+use GD::Simple;
+use Getopt::Long qw(:config no_ignore_case);
+
+use lib $Bin . "/lib";
+
+use Core::Mathematics qw(:all);
+
+my ($bases, $bands, $page, $u,
+    $x1, $x2, $y1, $y2,
+    $black, $output, $n3, $mincov,
+    $maxcov, $i, $help, $spd,
+    $overwrite, $lasty1, @bases, @bands,
+    @coverage, %sequencing);
+
+$i = 0;
+$lasty1 = 0;
+%sequencing = ( A => [],
+                C => [],
+                G => [],
+                T => [] );
+
+do {
+    
+    local $SIG{__WARN__} = sub { };
+
+    GetOptions( "h|help"          => \$help,
+                "u|uniform"       => \$u,
+                "3|three-samples" => \$n3,
+                "o|output=s"      => \$output,
+                "ow|overwrite"    => \$overwrite ) or help(1);
+
+    $spd = $ARGV[0];
+                
+};
+
+help() if ($help);
+
+$output = fileparse($spd, ".spd") if (!$output &&
+                                      $spd);
+$output =~ s/(\.png)?$/.png/ if ($output);
+
+die "\n  [!] Error: No SPD file has been specified\n\n" unless($spd);
+die "\n  [!] Error: Specified SPD file doesn't exist\n\n" unless(-e $spd);
+die "\n  [!] Error: Specified output file already exists\n\n" if (-e $output &&
+                                                                  !$overwrite);
+
+open(my $fh, $spd) or die "\n  [!] Error: Unable to read from SPD file (" . $! . ")\n\n";
+while(<$fh>) {
+        
+    chomp($_);
+    
+    my @line = split(/\t/, $_);
+    
+    die "\n  [!] Error: Provided file has less than 13 fields\n\n" if (@line < 13);
+    
+    push(@bases, $line[0]);
+    push(@{$bands[0]}, $line[1]);
+    push(@{$bands[1]}, $line[2]);
+    push(@{$bands[2]}, $line[3]) if ($n3);
+    push(@coverage, ($n3 ? average($line[10], $line[11], $line[12]) : average($line[10], $line[11])));
+        
+}
+close($fh);
+
+$bases = 10 * (scalar(@bases) + 2) + scalar(@bases) + 42;
+$bands = 360 * (scalar(@bands) + 4) + 20;
+($x1, $y1) = (10, 10);
+$page = GD::Simple->new($bands, $bases, 1); # Third parameter 1 allows to set image as truecolor, else
+                                            # it wouldn't allocate more than 256 colors
+$black = $page->colorAllocate(0,0,0);
+$maxcov = max(@coverage);
+$mincov = min(@coverage);
+
+foreach my $base (@bases) {
+    
+    my $bases = "ACGT";
+    $bases =~ s/$base//;
+    
+    push(@{$sequencing{$base}}, ($u ? $maxcov : $coverage[$i]));
+    push(@{$sequencing{$_}}, $mincov) for(split(//, $bases));
+    
+    $i++;
+    
+}
+
+foreach my $base (qw(A C G T)) {
+    
+    my (@sample, $last);
+    @sample = @{$sequencing{$base}};
+    $last = $x1;
+    
+    foreach my $value (reverse(@sample)) {
+        
+        my ($cvalue, $color);
+        ($x2, $y2) = (($x1 + 360), ($y1 + 10));
+        $cvalue = 255 - int(($value - $mincov) * 255 / ($maxcov - $mincov));
+        
+        $color = $page->colorAllocate($cvalue, $cvalue, $cvalue);
+        $page->bgcolor($color);
+        $page->fgcolor($color);
+        $page->rectangle($x1, $y1, $x2, $y2);
+        $y1 = $y2 + 1;
+        
+    }
+    
+    $x1 = $x2 + 1;
+    $y1 = 10;
+    
+}
+
+foreach my $sample (@bands) {
+    
+    my $last = $x1;
+    
+    foreach my $value (reverse(@{$sample})) {
+        
+        my ($max, $min, $cvalue, $color);
+        $max = max(@{$sample});
+        $min = min(@{$sample});
+        ($x2, $y2) = (($x1 + 360), ($y1 + 10));
+        $cvalue = 255 - int(($value - $min) * 255 / ($max - $min));
+        
+        $color = $page->colorAllocate($cvalue, $cvalue, $cvalue);
+        $page->bgcolor($color);
+        $page->fgcolor($color);
+        $page->rectangle($x1, $y1, $x2, $y2);
+        $y1 = $y2 + 1;
+        
+    }
+    
+    $lasty1 = $y1;
+    $x1 = $x2 + 1;
+    $y1 = 10;
+    
+}
+
+$lasty1 += 21;
+$page->string(gdGiantFont, 0, $lasty1, (" " x 20) . "A" . (" " x 39) . "C" . (" " x 39) .
+                                       "G" . (" " x 39) . "T" . (" " x 39) . "#1" . (" " x 39) .
+                                       "#2" . ($n3 ? (" " x 39) . "#3" : undef), $black);
+
+open(my $png, ">" . $output) or die "\n  [!] Error: Unable to write output PNG image (" . $! . ")\n\n";
+binmode $png;
+print $png $page->png();
+close($png);
+
+sub help {
+    
+    print "\n  [!] Error: Invalid option. Please check the help\n" if ($_[0]);
+    
+    die <<HELP;
+ 
+ SPD2PAGE (v0.1.0)
+ Epigenetics Units @ HuGeF [Human Genetics Foundation]
+ Group leader: Prof. Salvatore Oliviero
+    
+ Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+ Summary: Generates simulated PAGE gel images from SPD files
+ 
+ Usage:   spd2page [Options] <SPD File>
+ 
+ Options                             Description
+ -u  or --uniform                    Sequencing ladder bands will be colored uniformly
+                                     Note: By default, sequencing ladder bands color will be proportional
+                                     to the average coverage in the 2 (or 3 if -3 is specified) samples
+ -3  or --three-samples              Use data from all 3 samples in the SPD file (CIRS-seq only, Default: 2 samples)
+ -o  or --output                     Output PNG file (Default: <SPD File>.png)
+ -ow or --overwrite                  Overwrites output file (if already exists)
+ 
+HELP
+
+}

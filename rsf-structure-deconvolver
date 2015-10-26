@@ -1,0 +1,732 @@
+#!/usr/bin/perl
+
+##
+# RSF Structure Deconvolver (v0.1.0)
+# Epigenetics Unit @ HuGeF [Human Genetics Foundation]
+#
+# Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+# Summary: Produces secondary structures for analyzed transcripts using 
+#          structural data to guide folding
+#
+# This program is free software, and can be redistribute  and/or modified
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# any later version.
+#
+# Please see <http://www.gnu.org/licenses/> for more informations.
+##
+
+use strict;
+use Config;
+use ExtUtils::Installed;
+use File::Basename;
+use File::Path qw(mkpath rmtree);
+use File::Which;
+use FindBin qw($Bin);
+use Getopt::Long qw(:config no_ignore_case);
+use threads;
+use threads::shared;
+use Thread::Queue;
+use Thread::Semaphore;
+
+use lib $Bin . "/lib";
+
+use Core::Mathematics qw(:all);
+use Core::Statistics;
+use Core::Utils;
+use RNA::Utils;
+
+die "\n  [!] Error: This program requires ithreads." .
+    "\n             Please recompile Perl with ithreads and try again\n\n" unless(exists $Config{useithreads});
+
+$|++;
+
+my ($output, $ct, $input, $method,
+    $p, $img, $svg, $t,
+    $cutoff, $nlp, $ngu, $rnastructure,
+    $data, $slope, $intercept, $maxdist,
+    $sample, $hc, $distance, $step,
+    $nosubtract, $queue, $semaphore, $overwrite,
+    $error, $help, $norefine, @csd, @pool);
+
+$output = "structurome";
+$method = 1;
+$p = 1;
+$t = 37.0;
+$cutoff = 0.7;
+$slope = 1.8;
+$intercept = -0.6;
+$maxdist = 600;
+$sample = 1000;
+$distance = 0.5;
+$step = 0.01;
+
+my $folded : shared;
+my $total : shared;
+
+do {
+    
+    local $SIG{__WARN__} = sub { };
+
+    GetOptions( "h|help"                    => \$help,
+                "o|output-dir=s"            => \$output,
+                "ow|overwrite"              => \$overwrite,
+                "ct|connectivity-table"     => \$ct,
+                "s|spd=s"                   => \$input,
+                "m|deconvolution-method=i"  => \$method,
+                "p|threads=i"               => \$p,
+                "g|img"                     => \$img,
+                "v|svg"                     => \$svg,
+                "t|temperature=s"           => \$t,
+                "f|cutoff=s"                => \$cutoff,
+                "nlp|no-lonely-pairs"       => \$nlp,
+                "ngu|no-closing-gu"         => \$ngu,
+                "r|rnastructure=s"          => \$rnastructure,
+                "dp|data-path=s"            => \$data,
+                "sl|slope=s"                => \$slope,
+                "in|intercept=s"            => \$intercept,
+                "md|maximum-distance=i"     => \$maxdist,
+                "hc|hard-constraint"        => \$hc,
+                "b|boltzmann-sample=i"      => \$sample,
+                "d|distance=s"              => \$distance,
+                "S|step=s"                  => \$step,
+                "nss|no-structure-subtract" => \$nosubtract,
+                "ncr|no-cluster-refine"     => \$norefine ) or help(1);
+
+};
+
+help() if ($help);
+
+$rnastructure = which("Fold") if (!defined $rnastructure);
+$data = $ENV{DATAPATH} if (!defined $data);
+$output =~ s/\/?$/\// if (defined $output);
+
+##
+# Input validation
+##
+
+die "\n  [!] Error: No output directory specified\n\n" unless(defined $output);
+die "\n  [!] Error: No SPD directory\/file specified\n\n" unless(defined $input);
+die "\n  [!] Error: Provided SPD directory\/file doesn't exist\n\n" if (!-e $input);
+die "\n  [!] Error: Invalid deconvolution method\n\n" unless($method =~ m/^[1-3]$/);
+die "\n  [!] Error: Temperature must be a positive value\n\n" unless(ispositive($t));
+die "\n  [!] Error: Temperature must be comprised between 0 and 100 degree Celsius\n\n" if ($t > 100);
+die "\n  [!] Error: Constraining cutoff must be a real value\n\n" unless(ispositive($cutoff));
+die "\n  [!] Error: Constraining cutoff must be comprised between 0 and 1\n\n" if ($cutoff > 1);
+die "\n  [!] Error: Invalid slope value\n\n" unless(isnumeric($slope));
+die "\n  [!] Error: Invalid intercept value\n\n" unless(isnumeric($intercept));
+die "\n  [!] Error: Maximum distance value must be integer\n\n" unless(isint($maxdist));
+die "\n  [!] Error: Boltzmann sample size value must be integer\n\n" unless(isint($sample));
+die "\n  [!] Error: Boltzmann sample size must be comprised between 1 and 1,000,000\n\n" if ($sample < 1 ||
+                                                                                             $sample > 1000000);
+die "\n  [!] Error: Initial Hamming distance must be a positive value\n\n" unless(ispositive($distance));
+die "\n  [!] Error: Initial Hamming distance must be comprised between 0 and 1\n\n" if ($distance > 1);
+die "\n  [!] Error: Distance decrease must be a positive value\n\n" unless(ispositive($step));
+die "\n  [!] Error: Distance decrease must be comprised between 0 and 1\n\n" if ($step > 1);
+die "\n  [!] Error: Parameters -nss and -ncr are mutually exclusive\n\n" if ($nosubtract &&
+                                                                             $norefine);
+ 
+print "\n[+] Checking requirements...\n";
+
+if ($method == 2) {
+
+    if (!defined $data) { die "\n  [!] Error: Environment variable DATAPATH is not set\n\n"; }
+    elsif (!-d $data) { die "\n  [!] Error: Provided DATAPATH directory doesn't exist\n\n"; }
+
+    if (!defined $rnastructure) { die "\n  [!] Error: RNAstructure Fold is not in PATH\n\n"; }
+    elsif (!-e $rnastructure) { die "\n  [!] Error: RNAstructure Fold doesn't exist\n\n"; }
+    elsif (!-x $rnastructure) { die "\n  [!] Error: RNAstructure Fold is not executable\n\n"; }
+    
+    if (!-e $Bin . "/spd2shape") { die "\n  [!] Error: SPD2Shape utility doesn't exist\n\n"; }
+    elsif (!-x $Bin . "/spd2shape") { die "\n  [!] Error: SPD2Shape utility is not executable\n\n"; }
+
+    $ENV{DATAPATH} = $data;
+    $t += 273.15; # RNAstructure expects a temperature in Kelvin degrees
+
+}
+elsif ($method =~ m/^1|3$/ ||
+       $img) {
+    
+    my ($installed, %modules);
+    $installed = ExtUtils::Installed->new();
+    %modules = map {$_ => 1} $installed->modules();
+    
+    die "\n  [!] Error: Failed to locate ViennaRNA package's Perl module RNA.pm." .
+        "\n             Please ensure that ViennaRNA package 2.1.9 (or greater) is installed and try again\n\n" unless(exists $modules{RNA});
+        
+    if ($method == 3) {
+        
+        if (!-e $Bin . "/pf-backtrack") { die "\n  [!] Error: Partition Function Backtrack utility doesn't exist\n\n"; }
+        elsif (!-x $Bin . "/pf-backtrack") { die "\n  [!] Error: Partition Function Backtrack utility is not executable\n\n"; }
+        
+    }
+    
+}
+
+# Output directory tree
+print "[+] Making output directory tree...";
+
+if (-e $output) {
+
+    if ($overwrite) {
+        
+        rmtree($output, { safe      => 1,
+                          keep_root => 1,
+                          error     => \$error });
+        
+        die "\n\n  [!] Error: Unable to overwrite output directory (" . $error->[0] . ")\n\n" if (@{$error});
+        
+        
+        
+    }
+    else { die "\n\n  [!] Error: Output directory already exists." .
+               "\n      Please use -ow (or --overwrite) to overwrite output directory\n\n"; }
+    
+}
+
+mkpath($output . "structures", { mode  => 0755,
+                                 error => \$error });
+mkpath($output . "images", { mode  => 0755,
+                             error => \$error }) if ($img); 
+    
+die "\n\n  [!] Error: Unable to create output directory (" . $error->[0] . ")\n\n" if (@{$error});
+
+# Creating threads queue and redirecting STDERR
+open(STDERR,">" . $output . "error.log");
+select((select(STDERR), $|=1)[0]);
+
+$semaphore = Thread::Semaphore->new();
+$queue = Thread::Queue->new();
+@pool = map{ threads->create(\&folding, $queue) } 1 .. $p;
+
+print "\n[+] Importing SPD file(s) [0 imported]";
+
+if (-d $input) {
+    
+    opendir(my $dh, $input) or die "\n\n  [!] Error: Unable to read SPD files from directory\n\n";
+    while(my $file = readdir($dh)) {
+        
+        next if ($file !~ m/\.spd$/);
+        
+        push(@csd, $input . "/" . $file);
+        print "\r[+] Importing SPD file(s) [" . scalar(@csd) . " imported]";
+        
+    }
+    closedir($dh);
+    
+    die "\n\n  [!] Error: Specified folder doesn't contain any SPD file\n\n" unless(@csd);
+    
+}
+else { # Single SPD file
+
+    print "\r[+] Importing SPD file(s) [1 imported]";    
+    push(@csd, $input);
+    
+} 
+
+print "\n[+] Building RNA structurome [Progress: 0.00%]";
+
+$folded = 0;
+$total = scalar(@csd);
+$queue->enqueue($_) for (@csd);
+$queue->enqueue((undef) x $p);
+$_->join() for (@pool);
+
+close(STDERR);
+
+if ($folded == 0) {
+    
+    print "\n\n  [!] Error: Folding prediction failed for all transcripts." .
+          "\n               Please check the \"error.log\" file inside output directory\n";
+    
+}
+else {
+    
+    print "\r[+] Building RNA structurome [Progress: 100.00%]" .
+          "\n[+] Successfully built RNA structures for " . $folded . " (out of " . $total . ") transcripts...";
+    
+}
+
+unlink($output . "error.log") unless(-s $output . "error.log"); # Delete error.log file if empty
+
+print "\n[+] All done.\n\n";
+
+sub folding { # Threads
+    
+    my $queue = shift;
+    
+    if ($method == 1 ||
+        $img) {
+        
+        use RNA;
+
+        if ($method == 1) {
+            
+            $RNA::temperature = $t;
+            $RNA::noLonelyPairs = $nlp;
+            $RNA::no_closingGU = $ngu;
+            $RNA::fold_constrained = 1;
+            
+        }
+        
+    }
+    elsif ($method == 3) { use Clusterer; }
+    
+    while(my $csd = $queue->dequeue()) {
+       
+        my ($filename, $sequence, $structure, $energy,
+            @reactivity);
+        $filename = fileparse($csd, ".spd");
+       
+        open(my $fh, "<" . $csd) or (_thread_error("Failed to open SPD file -> " . $csd) and next());
+        while(<$fh>) {
+        
+            chomp();
+            my @l = split(/\t/, $_);
+        
+            if (@l < 13) {
+                
+                _thread_error("Less than 13 fields in SPD file -> " . $csd);
+                
+                next();
+                
+            }
+        
+            $sequence .= $l[0];
+            push(@reactivity, $l[9]);
+        
+        }
+        close($fh);
+       
+        if ($method == 1) { # ViennaRNA
+        
+            my ($constraint);
+            $constraint .= $_ > $cutoff ? "x" : "." for (@reactivity);
+            
+            ($structure, $energy) = RNA::fold($sequence, $constraint);
+            
+            report($sequence, $structure, $energy, $filename);
+            
+            RNA::free_arrays();
+        
+        } # End of ViennaRNA
+        elsif ($method == 2) { # RNAstructure
+            
+            my ($tmp, $command);
+            $tmp = $output . $filename . "_" . threads->tid(); # Temporary file basename
+            $command = $rnastructure . " '" . $tmp . ".fa' '" . $tmp . ".ct' -si " . $intercept . " -sm " . $slope . " -t " . $t . " -sh '" . $tmp . ".shape' 2>&1";
+            
+            system($Bin . "/spd2shape '" . $csd . "' > '" . $tmp . ".shape'"); # Generates the SHAPE constraint file
+            
+            # Generates temporary sequence file
+            open(my $wh, ">" . $tmp . ".fa") or (_thread_error("Failed to write temporary FASTA file -> " . $tmp . ".fa") and next());
+            print $wh ">sequence\n" . $sequence . "\n";
+            close($wh);
+            
+            $command = `$command`;
+            
+            if ($command !~ m/Single strand folding complete\./ ||
+                $command =~ m/incorrect|error/i) { # Something went wrong during RNAstructure execution
+                
+                
+                unlink($tmp . ".fa", $tmp . ".ct", $tmp . ".shape");
+                $command =~ s/^/    /mg;
+                
+                _thread_error("Error encountered during RNAstructure execution:\n\n" . $command);
+                
+                if (!$folded) { # RNAstructure failed on first RNA, or on all RNAs untill now, so we kill the thread
+                    
+                    _thread_error("Killing thread " . threads->tid());
+                    threads->exit(1);
+                    
+                }
+                
+                next();
+                
+            }
+            
+            ($structure, $sequence, $energy) = ct2db($tmp . ".ct");
+            
+            if ($structure) { report($sequence, $structure, $energy, $filename); }
+            
+            #unlink($tmp . ".fa", $tmp . ".ct", $tmp . ".shape"); # Cleanup temporary files
+            
+            if (!$structure) {
+                
+                _thread_error("Failed to parse RNAstructure CT file -> " . $tmp . ".ct");
+                
+                next();
+                
+            }
+            
+        } # End of RNAstructure
+        else { # Iterative Cluster Refinement
+        
+            my ($command, $constraint, $clusterer, $index,
+                $last, $dist, @sample, @clusters,
+                @consensus, %consensus);
+            $command = $Bin . "/pf-backtrack -s " . $sequence . " -t " . $t . ($nlp ? " -nlp " : " ") . ($ngu ? " -ngu " : " ");
+            
+            # Hard constraint defined
+            if ($hc) {
+                
+                $constraint .= $_ > $cutoff ? "x" : "." for (@reactivity);
+                $constraint .= "." for (length($sequence) - @reactivity);
+                $command .= " -c '" . $constraint . "'";
+                
+            }
+            
+            $index = 0;
+            $last = { r     => 0,
+                      index => undef };
+            @sample = split(/\n/, `$command 2>/dev/null`);
+	    @sample = uniq(@sample);
+            
+            if (!@sample) {
+                
+                _thread_error("Failed to perform backtracking for transcript -> " . $filename . "\n\n");
+                
+                if (!$folded) { # RNAstructure failed on first RNA, or on all RNAs untill now, so we kill the thread
+                    
+                    _thread_error("Killing thread " . threads->tid());
+                    threads->exit(1);
+                    
+                }
+                
+                next();
+                
+            }
+
+	
+
+            $clusterer = Clusterer->new(distance => $distance);
+            @clusters = $clusterer->cluster(\@sample);
+            pop_zeros(\@reactivity);
+            
+            foreach my $cluster (@clusters) {
+
+                my ($r, @cluster);
+
+                # Computing the number of structures in which each position of transcript is single-strand
+                foreach my $struct (@{$cluster}) { for (0 .. @reactivity - 1) { $cluster[$_]++ if (substr($struct, $_, 1) eq "."); } }
+
+                # Fill remaining positions (all paired) with 0
+                push(@cluster, 0) while (@cluster != @reactivity);
+
+                # Computing the probability matrix (0 = double-strand, 1 = single-strand)
+                for (@cluster) { $_ /= scalar(@{$cluster}); }
+
+                $r = spearman3nt(\@reactivity, \@cluster);
+               
+                if (!defined $last->{index} ||
+                    $r > $last->{r}) {
+                    
+                    $last->{r} = $r;
+                    $last->{index} = $index;
+                    
+                }
+                
+                $index++;
+
+            }
+            
+            # The cluster with the higher correlation to structural probing data is the new sample to cluster
+            @sample = @{$clusters[$last->{index}]};
+            $dist = $distance;
+            
+            if (!$norefine) {
+            
+                # Cluster refinement
+                while(1) {
+                    
+                    undef($last->{index});
+                    $index = 0;
+                    $dist -= $step;
+                    
+                    last if ($dist < 0);
+                
+                    $clusterer = Clusterer->new(distance => $dist);
+                    @clusters = $clusterer->cluster(\@sample);
+                
+                    foreach my $cluster (@clusters) {
+                
+                        my ($r, @cluster);
+                
+                        # Computing the number of structures in which each position of transcript is single-strand
+                        foreach my $struct (@{$cluster}) { for (0 .. @reactivity - 1) { $cluster[$_]++ if (substr($struct, $_, 1) eq "."); } }
+                
+                        # Fill remaining positions (all paired) with 0
+                        push(@cluster, 0) while (@cluster != @reactivity);
+                
+                        # Computing the probability matrix (0 = double-strand, 1 = single-strand)
+                        for (@cluster) { $_ /= scalar(@{$cluster}); }
+                
+                        $r = spearman3nt(\@reactivity, \@cluster);
+                        
+                        if ($r > $last->{r}) {
+                            
+                            $last->{r} = $r;
+                            $last->{index} = $index;
+                            
+                        }
+                        
+                        $index++;
+                
+                    }
+                
+                    next() if (!defined $last->{index});
+                
+                    @sample = @{$clusters[$last->{index}]};
+                
+                }
+                
+            }
+            
+            if (!$nosubtract) {
+                
+                my $lastr = 0;
+                
+                while(1) {
+                    
+                    my ($r, @cluster);
+                    
+                    last if (@sample == 1);
+                    
+                    foreach my $struct (@sample) { for (0 .. @reactivity - 1) { $cluster[$_]++ if (substr($struct, $_, 1) eq "."); } }
+                    
+                    # Fill remaining positions (all paired) with 0
+                    push(@cluster, 0) while (@cluster != @reactivity);
+            
+                    for (my $i = 0; $i < @sample; $i++) {
+                        
+                        my @ccopy = @cluster;
+                        
+                        for (0 .. @reactivity - 1) { $ccopy[$_]-- if (substr($sample[$i], $_, 1) eq "."); }
+                        
+                        for (@ccopy) { $_ /= (scalar(@sample) - 1); }
+                        
+                        $r = spearman3nt(\@reactivity, \@ccopy);
+                        
+                        if ($r > $lastr) {
+                        
+                            $lastr = $r;
+                            $index = $i;
+                        
+                        }
+                        
+                    }
+                    
+                    next if ($lastr < $last->{r});
+                    
+                    $last->{r} = $lastr;
+                    splice(@sample, $index, 1);
+            
+                }
+                
+            }
+            
+            @consensus = (".") x length($sample[0]);
+    
+            foreach my $struct (@sample) {
+
+                my (@pair, @open, @struct);
+                @struct = split(//, $struct);
+            
+                for(my $i = 0; $i < @struct; $i++) {
+            
+                    if ($struct[$i] eq "(") { push(@open, $i); }
+                    elsif ($struct[$i] eq ")") { $consensus{pop(@open) . "-" . $i}++; }
+            
+                }
+        
+            }
+    
+            foreach my $i (sort keys %consensus) {
+        
+                next() if ($consensus{$i} / @sample <= 0.5);
+                
+                my @i = split("-", $i);
+                
+                $consensus[$i[0]] = "(";
+                $consensus[$i[1]] = ")";
+        
+            }
+        
+            $structure = join("", @consensus);
+            
+            if ($structure) {
+                
+                # Energy for consensus structure
+                $semaphore->down();
+                $energy = RNA::energy_of_struct($sequence, $structure); #}
+                $semaphore->up();
+                
+                report($sequence, $structure, $energy, $filename);
+                
+            }
+            else { _thread_error("Secondary structure prediction failed for transcript -> " . $filename); }
+            
+        }
+        
+        { # lock() block
+         
+          lock($folded);
+          $folded++;
+         
+          print "\r[+] Building RNA structurome [Progress: " . sprintf("%.2f", $folded / $total * 100) . "%]";
+        
+            if ($img) {
+            
+                my $file = $output . "images/" . $filename;
+            
+                if ($svg) { RNA::svg_rna_plot($sequence, $structure, $file . ".svg"); }
+                else { RNA::PS_rna_plot($sequence, $structure, $file . ".ps"); }
+            
+            }
+            
+        }
+        
+    }
+    
+}
+
+sub report {
+    
+    my ($sequence, $structure, $energy, $id) = @_;
+    my $file = $output . "structures/" . $id . "." . ($ct ? "ct" : "db");
+    
+    open(my $wh, ">" . $file) or (_thread_error("Failed to report structure to file -> " . $id) and return());
+    select((select($wh), $|=1)[0]);
+    
+    if ($ct) {
+        
+        if (my $content = db2ct($sequence, $structure)) {
+            
+            print $wh "  " . length($sequence) . "  ENERGY = " . $energy . "  " . $id . "\n" .
+                      $content;
+            
+        }
+        else {
+        
+            _thread_error("Failed Dot bracket conversion to CT format -> " . $id);    
+            return();
+            
+        }
+        
+    }
+    else {
+        
+        print $wh ">" . $id . "\n" .
+                  $sequence . "\n" .
+                  $structure . ($energy ? " (" . $energy . ")\n" : "\n");
+        
+    }
+    
+    close($wh);
+    
+}
+
+sub pop_zeros {
+    
+    # Since structure probing experiments give information only on the base immediately preceding the
+    # start mapping position of the read, the last n bases at the 3'-end of transcripts will
+    # not be resolved (where n is the size of the insert between the two sequencing adapters).
+    # Therefore we remove all 0 reactivities from the 3'-end of the transcript for correlations
+    # calculation, untill we encounter a non 0 reactivity
+    
+    my $reactivity = shift;
+    
+    while(@{$reactivity} &&
+          $reactivity->[-1] == 0) { pop(@{$reactivity}); }
+    
+    
+}
+
+sub spearman3nt {
+
+    my @data = @_;
+
+    my (@x, @y);
+
+    for (my $i = 1; $i < @{$data[0]} - 1; $i++) {
+        
+        push(@x, average($data[0]->[$i-1],$data[0]->[$i],$data[0]->[$i+1]));
+        push(@y, average($data[1]->[$i-1],$data[1]->[$i],$data[1]->[$i+1]));
+        
+    }
+
+    return(spearman(\@x, \@y));
+
+}
+
+sub _thread_error {
+    
+    my $msg = shift;
+    
+    { lock($folded);
+      print STDERR "[!] " . $msg . "\n"; }
+    
+}
+
+sub help {
+    
+    print "\n  [!] Error: Invalid option. Please check the help\n" if ($_[0]);
+     
+    die <<HELP;
+ 
+ RSF Structure Deconvolver (v0.1.0)
+ Epigenetics Units @ HuGeF [Human Genetics Foundation]
+ Group leader: Prof. Salvatore Oliviero
+    
+ Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+ Summary: Produces secondary structures for analyzed transcripts using 
+          structural data to guide folding
+ 
+ Usage:   rsf-structure-deconvolver [Options]
+ 
+ Options                             Description
+ -o  or --output-dir                 Output directory (Default: structurome/)
+ -ow or --overwrite                  Overwrites output directory (if the specified path already exists)
+ -ct or --connectivity-table         Writes predicted structures in CT format (Default: Dot bracket format)
+ -s  or --spd                        Path to the output folder generated by RSF Analyzer containing multiple SPD files,
+                                     or to a single SPD file
+ -m  or --deconvolution-method       Specifies the structure inference method (1-3, Default: 1): [1] ViennaRNA (hard-constraint)
+                                                                                                 [2] RNAstructure (soft-constraint) 
+                                                                                                 [3] Iterative Cluster Refinement
+ -p  or --threads                    Number of processors to use for the analysis (Default: 1)
+ -g  or --img                        Enables generation of structure representations (Default: Postscript format)
+ -v  or --svg                        Structure representations are generated in SVG format (requires -g)
+ -t  or --temperature                Temperature in Celsius degrees (Default: 37.0)
+ 
+ ViennaRNA Options [1]
+ -f   or --cutoff                    Cutoff for constraining a transcript's position as unpaired (0-1, Default: 0.7)
+ -nlp or --no-lonely-pairs           Disallows lonely base-pairs (1 bp helices) inside predicted structure
+ -ngu or --no-closing-gu             Disallows G:U wobbles at the end of helices
+ 
+ RNAstructure Options [2]
+ -r  or --rnastructure               Path to RNAstructure Fold executable (Default: assumes RNAstructure is in PATH)
+ -dp or --data-path                  Path to RNAstructure data tables (Default: assumes DATAPATH environment variable is already set)
+ -sl or --slope                      Sets slope used with structural probing data restraints (Default: 1.8 [kcal/mol])
+ -in or --intercept                  Sets intercept used with structural probing data restraints (Default: -0.6 [kcal/mol])
+ -md or --maximum-distance           Sets the maximum pairing distance in nucleotides between transcript's residues (Default: 600)
+ 
+ Iterative Cluster Refinement Options [3]
+ -hc  or --hard-constraint           Enables hard-constraint for transcript's position with reactivity above -f (or --cutoff)
+ -f   or --cutoff                    Cutoff for constraining a transcript's position as unpaired (0-1, Default: 0.7, requires -hc)
+ -b   or --boltzmann-sample          Number of structures to sample from the weighted Boltzmann ensemble (1-1000000, Default: 1000)
+                                     Note: lower values will speed up the execution, but may significantly reduce prediction accuracy
+ -d   or --distance                  Initial minimum distance between structures for Hamming-based clustering (0-1, Default: 0.5)
+                                     Note: lower values will speed up the execution, but may significantly reduce prediction accuracy
+ -S   or --step                      Distance decrease for iterative cluster refinement (0-1, Default: 0.01).
+                                     Note: higher values will speed up the execution, but may significantly reduce prediction accuracy
+ -ncr or --no-cluster-refine         Disables iterative cluster refinement. After the initial clustering round, the picked cluster
+                                     will be refined by iterative 1-by-1 structure subtraction only.
+                                     Note: this slows down the execution, but may significantly increase prediction accuracy
+ -nss or --no-structure-subtract     Disables iterative 1-by-1 structure subtraction from final cluster
+                                     Note: this speeds up the execution, but may significantly reduce prediction accuracy
+ -nlp or --no-lonely-pairs           Disallows lonely base-pairs (1 bp helices) inside predicted structure
+ -ngu or --no-closing-gu             Disallows G:U wobbles at the end of helice
+ 
+HELP
+    
+}

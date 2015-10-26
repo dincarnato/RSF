@@ -1,0 +1,260 @@
+#!/usr/bin/perl
+
+##
+# RSF Accuracy Estimator (v0.1.0)
+# Epigenetics Unit @ HuGeF [Human Genetics Foundation]
+#
+# Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+# Summary: Estimates overall experiment's accuracy on a set of RNAs with known secondary structures
+#
+# This program is free software, and can be redistribute  and/or modified
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# any later version.
+#
+# Please see <http://www.gnu.org/licenses/> for more informations.
+##
+
+use strict;
+use File::Basename;
+use FindBin qw($Bin);
+use Getopt::Long qw(:config no_ignore_case);
+use Text::ASCIITable;
+use Term::ANSIColor qw(:constants);
+
+use lib $Bin . "/lib";
+
+use Core::Mathematics qw(:all);
+use Data::Sequence::Utils;
+use RNA::Utils;
+
+$|++;
+
+my ($csoutput, $eu, $en, $eg,
+    $structures, $table, $help, %efficiency,
+    %transcripts);
+
+do {
+    
+    local $SIG{__WARN__} = sub { };
+
+    GetOptions( "h|help"                   => \$help,      
+                "o|rsf-analyzer-output=s"  => \$csoutput,
+                "eu|exclude-unstable"      => \$eu,
+                "en|exclude-non-canonical" => \$en,
+                "eg|exclude-gu"            => \$eg,
+                "s|structures=s"           => \$structures ) or help(1);
+
+};
+
+help() if ($help);
+
+$csoutput =~ s/\/?$/\//;
+
+##
+# Input validation
+##
+
+die "\n  [!] Error: No RSF Analyzer output folder provided\n\n" unless(defined $csoutput);
+die "\n  [!] Error: No known structures file provided\n\n" unless(defined $structures);
+die "\n  [!] Error: RSF Analyzer output folder doesn't exist\n\n" unless(-d $csoutput);
+die "\n  [!] Error: Known structures file doesn't exist\n\n" unless(-e $structures);
+
+##
+# Read structures
+##
+
+my ($line, $skipped) = (0, 0);
+
+print "\n[+] Importing structures...";
+
+open(my $fh, "<" . $structures) or die "\n\n  [!] Error: Unable to open known secondary structures file (" . $! . ")\n\n";
+while(<$fh>) {
+        
+    chomp();
+    
+    my @line = split(/\t/, $_);
+    $line++;
+    
+    if (@line < 2) { next; }
+    elsif (!-e $csoutput . $line[0] . ".spd") {
+        
+        $skipped++;
+        next;
+        
+    }
+    elsif (!isdotbracket($line[1])) { die "\n\n  [!] Error: Second field at line " . $line . " is not a dot-bracket structure\n\n"; }
+    elsif (!isdbbalanced($line[1])) { die "\n\n  [!] Error: Dot-bracket structure at line " . $line . " is not balanced\n\n"; }
+
+    $transcripts{$line[0]} = [ split(//, $line[1]) ];
+
+}
+close($fh);
+
+if (!keys(%transcripts)) {
+    
+    if ($skipped) { die "\n\n  [!] Error: Structural data unavailable for specified transcripts\n\n"; }
+    else { die "\n\n  [!] Error: Malformed structures file\n\n"; }
+    
+}
+
+print "\n\n  [*] Successfully imported: " . keys(%transcripts) . " structures" .
+      ($skipped ? "\n                    Skipped: " . $skipped . " structures\n" : "\n");
+      
+##
+# Read reactivities
+##
+
+print "\n[+] Reading reactivity data...\n";
+
+foreach my $transcript (sort keys %transcripts) {
+    
+    print "\n  [*] Processing " . $transcript;
+    
+    my (@sequence, @structure, @reactivity);
+    @structure = @{$transcripts{$transcript}};
+    
+    open(my $fh, "<" . $csoutput . $transcript . ".spd") or die "\n\n  [!] Error: Unable to open SPD file for transcript \"" . $transcript . "\" (" . $! . ")\n\n";
+    while(<$fh>) {
+        
+        my @line = split(/\t/, $_);
+        die "\n\n  [!] Error: SPD file for transcript \"" . $transcript . "\" contains less than 13 fields\n\n" if (@line < 13);
+              
+        push(@sequence, $line[0]);
+        push(@reactivity, $line[9]);
+        
+    }
+    close($fh);
+    
+    die "\n\n  [!] Error: Sequence and structure for transcript \"" . $transcript . "\" have unequal length\n\n" if (@structure != @sequence);
+
+    if ($en) { # Filter non-canonical base pairs
+    
+        foreach my $pair (listpairs(join("", @structure))) {
+        
+            if (!rnapair($sequence[$pair->[0]], $sequence[$pair->[1]], $eg)) {
+            
+                $structure[$pair->[0]] = ".";
+                $structure[$pair->[1]] = ".";
+            
+            }
+            
+        }
+    
+    }
+    
+    for(my $cutoff=0; $cutoff<=1; $cutoff+=0.1) {  # Loops through the cutoff range
+        
+        $efficiency{$cutoff} = { correct   => 0,
+                                 unstable  => 0,
+                                 wrong     => 0,
+                                 base      => { A => 0,
+                                                C => 0,
+                                                G => 0,
+                                                T => 0 } } if (!exists $efficiency{$cutoff});
+        
+        for(my $i=0; $i<@structure; $i++) {  # Loops through transcript's positions
+            
+            my ($unstable, $nt);
+            $unstable = 0;
+            $nt = $structure[$i];
+            
+            if ($nt eq ".") {
+                
+                $efficiency{$cutoff}->{correct}++ if ($reactivity[$i] >= $cutoff);
+                
+            }
+            elsif ($nt =~ m/^\(|\)$/ &&
+                   (($i > 0 && $structure[$i-1] eq ".") ||
+                    ($i < @structure - 1 && $structure[$i+1] eq "."))) {
+                
+                $efficiency{$cutoff}->{unstable}++ if ($reactivity[$i] >= $cutoff);
+                $unstable = 1;
+                
+            }
+            else { $efficiency{$cutoff}->{wrong}++ if ($reactivity[$i] >= $cutoff); }
+            
+            next if ($unstable && $eu);
+            
+            $efficiency{$cutoff}->{base}->{$sequence[$i]}++ if ($reactivity[$i] >= $cutoff);
+            
+        }
+        
+    }
+    
+}
+
+##
+# Report statistics
+##
+
+print "\n\n[+] Reactivity statistics\n";
+
+$table = Text::ASCIITable->new();
+$table->setCols(BOLD . "Reactivity", "Single strand", "Double strand", "A", "C", "G", "U");
+
+foreach my $cutoff (sort {$a <=> $b} keys %efficiency) {
+    
+    my ($wrong, $total);
+    $wrong = $efficiency{$cutoff}->{wrong};
+    $total = $efficiency{$cutoff}->{correct} + $efficiency{$cutoff}->{wrong};
+    
+    if (!$eu) {
+        
+        $wrong += $efficiency{$cutoff}->{unstable};
+        $total += $efficiency{$cutoff}->{unstable};
+        
+    }
+    
+    if ($total) {
+        
+        my $correct = $efficiency{$cutoff}->{correct} / $total;
+    
+        $table->addRow(RESET . $cutoff,
+                       $efficiency{$cutoff}->{correct} . " (" . sprintf("%.2f", $correct * 100) . "%)",
+                       $wrong . " (" . sprintf("%.2f", $wrong / $total * 100) . "%)",
+                       $efficiency{$cutoff}->{base}->{A} . " (" . sprintf("%.2f", $efficiency{$cutoff}->{base}->{A} / $total * 100) . "%)",
+                       $efficiency{$cutoff}->{base}->{C} . " (" . sprintf("%.2f", $efficiency{$cutoff}->{base}->{C} / $total * 100) . "%)", 
+                       $efficiency{$cutoff}->{base}->{G} . " (" . sprintf("%.2f", $efficiency{$cutoff}->{base}->{G} / $total * 100) . "%)",
+                       $efficiency{$cutoff}->{base}->{T} . " (" . sprintf("%.2f", $efficiency{$cutoff}->{base}->{T} / $total * 100) . "%)");
+    
+    }
+    else { $table->addRow(RESET . $cutoff, "-", "-", "-", "-", "-", "-"); }
+    
+}
+
+print $table->draw( [" ", " ", " ", " "],
+                    [" ", " ", " "],
+                    [" ", " ", " ", " "],
+                    [" ", " ", " "],
+                    [" ", " ", " ", " "],
+                    [" ", " ", " ", " "]);
+
+print "[+] All done.\n\n";
+
+sub help {
+    
+    print "\n  [!] Error: Invalid option. Please check the help\n" if ($_[0]);
+    
+    die <<HELP;
+ 
+ RSF Accuracy Estimator (v0.1.0)
+ Epigenetics Units @ HuGeF [Human Genetics Foundation]
+ Group leader: Prof. Salvatore Oliviero
+    
+ Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+ Summary: Estimates overall experiment's accuracy on a set of RNAs with known secondary structures
+ 
+ Usage:   rsf-accuracy-estimator [Options]
+ 
+ Options                             Description
+ -o  or --rsf-analyzer-output        Path to the output folder generated by RSF Analyzer, containing the SPD files
+ -eu or --exclude-unstable           Excludes unstable base pairs at the end of helices
+ -en or --exclude-non-canonical      Exclude non-canonical base pairs
+ -eg or --exclude-gu                 Exclude G:U wobbled base pairs (requires -en)
+ -s  or --structures                 A TAB-delimited file containing the sequence ID and the secondary structure in
+                                     dot-bracket notation of a set of transcripts with known structure
+ 
+HELP
+    
+}
