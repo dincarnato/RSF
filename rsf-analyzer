@@ -511,15 +511,19 @@ foreach my $transcript (sort keys %transcripts) {
             
         }
         
-        $line[3] -= $trim5;
-        $sample1[($line[3] - 2)]++ if ($line[3] >= 2 + $trim5);
-        
-        for my $i ($line[3] - 2 .. $line[3] + length($line[9]) - 1) {
+        if ($line[3] >= 2 + $trim5) {
             
-            next if ($i < 0);               # In case the actual 5'-end of transcript starts before the annotated one
-            last if ($i > $length - 1);     # In case the actual 3'-end of transcript ends after the annotated one
+            $line[3] -= $trim5;
+            $sample1[($line[3] - 2)]++;
             
-            $cov1[$i]++;
+            for my $i ($line[3] - 2 .. $line[3] + length($line[9]) - 1) {
+            
+                next if ($i < 0);               # In case the actual 5'-end of transcript starts before the annotated one
+                last if ($i > $length - 1);     # In case the actual 3'-end of transcript ends after the annotated one
+            
+                $cov1[$i]++;
+            
+            }
             
         }
         
