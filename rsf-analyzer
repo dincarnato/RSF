@@ -466,7 +466,7 @@ if ($scoringmethod == 1) {
 
 print "\n[+] Calculating normalized reactivity scores [0 (0) of " . keys(%transcripts) . " transcripts passed]";
 
-open($tmp[$_]->{fh}, "<" . $tmp[$_]->{file}) or die "\n\n  [!] Error: Unable to read from SampleÊ#" . ($_ + 1) . " temporary SAM file (" . $! . ")\n\n" for (0 .. $nsamples - 1);
+open($tmp[$_]->{fh}, "<" . $tmp[$_]->{file}) or die "\n\n  [!] Error: Unable to read from Sample #" . ($_ + 1) . " temporary SAM file (" . $! . ")\n\n" for (0 .. $nsamples - 1);
 
 my $io = Data::IO::Sequence->new(file => $multifasta);
 my ($processed, $passed) = (0, 0);
@@ -698,7 +698,7 @@ foreach my $transcript (sort keys %transcripts) {
         
         # We avoid any 0 reactivity corresponding to an uncovered position
         $covered = 1 if (((!$avoid && (($enzymatic && ($cov1[$_] || $cov2[$_])) || (!$enzymatic && ($cov2[$_] || $cov3[$_])))) ||
-                          (!$enzymatic && ($avoid && (($base !~ m/^[AC]$/ && $cov2[$_]) || ($base !~ m/^[GT]$/ && $cov3[$_]))))) ||
+                          (!$enzymatic && ($avoid && (($base =~ m/^[AC]$/ && $cov2[$_]) || ($base =~ m/^[GT]$/ && $cov3[$_]))))) ||
                          $normall);
         
         push(@transcript, join("\t", $base,
