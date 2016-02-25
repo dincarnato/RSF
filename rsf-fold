@@ -58,7 +58,6 @@ $t = 37.0;
 $cutoff = 0.7;
 $slope = 1.8;
 $intercept = -0.6;
-$maxdist = 600;
 $constmethod = 1;
 $constconversion = 1;
 $beta = 0.5;
@@ -324,6 +323,8 @@ sub fold { # Threads
             }
             else { $cmd .= " --shapeMethod=Dm" . $slope . "b" . $intercept; }  # Deigan et al., 2009 (ViennaRNA 'D')
             
+            $cmd .= " --maxBPspan=" . $maxdist if ($maxdist);
+            
             $ret = `$cmd 2>/dev/null`;
             $structure = (split(/\n/, $ret))[2]; # Only extracts dot-bracket structure
             $structure =~ s/\s.+?$//;            # Removes free energy
@@ -331,8 +332,10 @@ sub fold { # Threads
         }
         elsif ($method == 2) { # RNAstructure
             
-            $cmd = $rnastructure . " '" . $tmp . ".fa' '" . $tmp . ".ct' -si " . $intercept . " -sm " . $slope . " -t " . $t . " -sh '" . $tmp . ".shape' 2>&1";
-            $ret = `$cmd`;
+            $cmd = $rnastructure . " '" . $tmp . ".fa' '" . $tmp . ".ct' -si " . $intercept . " -sm " . $slope . " -t " . $t . " -sh '" . $tmp . ".shape'";
+            $cmd .= " -md " . $maxdist if ($maxdist);
+            
+            $ret = `$cmd 2>&1`;
             
             if ($ret !~ m/Single strand folding complete\./ ||
                 $ret =~ m/incorrect|error/i) { # Something went wrong during RNAstructure execution
@@ -439,7 +442,7 @@ sub help {
  -t  or --temperature                Temperature in Celsius degrees (Default: 37.0)
  -sl or --slope                      Sets slope used with structural probing data restraints (Default: 1.8 [kcal/mol])
  -in or --intercept                  Sets intercept used with structural probing data restraints (Default: -0.6 [kcal/mol])
- -md or --maximum-distance           Sets the maximum pairing distance in nucleotides between transcript's residues (Default: 600)
+ -md or --maximum-distance           Sets the maximum pairing distance in nucleotides between transcript's residues (Default: 0 [No limit])
  
  Folding method #1 options (ViennaRNA)
  -v   or --viennarna                 Path to ViennaRNA RNAfold executable (Default: assumes RNAfold is in PATH)
