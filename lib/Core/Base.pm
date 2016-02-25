@@ -65,8 +65,12 @@ sub loadpackage {
     
     eval { require $module; };
     
-    if ($@) { $self->throw("Unable to load package \"" . $package . "\""); }
-    else { return 1; }
+    if ($@) {
+        
+        chomp($@);
+        $self->throw("Unable to load package \"" . $package . "\"\nReason: " . $@);
+        
+    }
     
 }
 
@@ -110,7 +114,7 @@ sub warn {
     
     return if ($self->{verbosity} < 0);
     
-    carp $self->_exception($message);
+    Core::Utils::warn($message, $self->{verbosity});
     
 }
 
@@ -119,53 +123,7 @@ sub throw {
     my $self = shift;
     my $message = shift if (@_);
     
-    croak $self->_exception($message);
-    
-}
-
-sub _exception {
-    
-    my $self = shift;
-    my $message = shift || "Undefined error" . ($self->{verbosity} ? "" :
-                                                                     ". Increase verbosity level to 1 to get the complete stack trace-dump.");
-    
-    $message =~ s/(\n+?)/$1    /;
-    
-    my ($i, $dump, $package, $subroutine,
-        @stack);
-    $i = 2;
-    
-    while (my @caller = caller($i)) {
-    
-        unshift(@stack, \@caller);
-        $dump = $caller[3];    
-        $i++;
-    
-    }
-    
-    $dump =~ m/^([\w:]+?)::(\w+)$/;
-    ($package, $subroutine) = ($1, $2);
-    $message = "\n[!] Exception" . (defined $dump ? " [" . $package . "->" . $subroutine . "()]\n" : "\n") . "    " . $message;
-
-    if ($self->{verbosity} == 1) {
-    
-        $message .= "\n    Stack TraceDump (descending):\n";
-    
-        foreach my $caller (@stack) {
-        
-            my ($package, $file, $line, $subroutine) = @{$caller};
-            $message .= "\n    [*] Package:    " . $package .
-                        "\n        File:       " . $file .
-                        "\n        Line:       " . $line .
-                        "\n        Subroutine: " . $subroutine . "\n";
-        
-        }
-        
-    }
-    
-    $message .= "\n    -> Caught in main";
-    
-    return($message);
+    Core::Utils::throw($message, $self->{verbosity});
     
 }
 

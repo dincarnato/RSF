@@ -18,17 +18,81 @@ package Core::Utils;
 
 use strict;
 use Carp;
-use FindBin qw($RealBin);
 use Fcntl qw(F_GETFL SEEK_SET);
+use File::Spec;
 use Scalar::Util qw(reftype);
 use Term::ReadKey;
 
 use base qw(Exporter);
 
 our @EXPORT = qw(is checkparameters blessed clonehashref
-		 clonearrayref clonefh mktree deltree
-		 uriescape uriunescape unquotemeta striptags questionyn
-		 uniq);
+                 clonearrayref clonefh uriescape uriunescape
+                 unquotemeta striptags questionyn uniq
+                 randint randnum randalpha randalphanum
+                 randmixed which);
+
+sub uniq {
+    
+    my %seen = ();
+    
+    return(grep { !$seen{$_}++ } @_);
+
+}
+
+sub throw { croak _exception($_[0], $_[1] // $ENV{verbosity} // 0, 1); }
+
+sub warn {
+
+    my $verbosity = $_[1] // $ENV{verbosity} // 0;
+    
+    carp _exception($_[0], $verbosity, 0) if ($verbosity >= 0);
+    
+}
+
+sub _exception {
+    
+    my $message = shift;
+    my ($verbosity, $mode) = @_ if (@_);
+    
+    $message = "Undefined error" . ($verbosity == 1 ? "." : ". Increase verbosity level to 1 to get the complete stack trace-dump.") if (!defined $message);
+    $message =~ s/(\n+?)/$1    /;
+    
+    my ($i, $dump, $package, $subroutine,
+        @stack);
+    $i = 2;
+    
+    while (my @caller = caller($i)) {
+    
+        unshift(@stack, \@caller);
+        $dump = $caller[3] if ($caller[3] ne "(eval)");    
+        $i++;
+    
+    }
+    
+    $dump =~ m/^([\w:]+?)::(\w+)$/;
+    ($package, $subroutine) = ($1, $2);
+    $message = "\n[!] " . ($mode ? "Exception" : "Warning") . (defined $dump ? " [" . $package . "->" . $subroutine . "()]:\n" : ":\n") . "    " . $message;
+
+    if ($verbosity == 1 &&
+        @stack) {
+    
+        $message .= "\n\n    Stack TraceDump (descending):\n";
+    
+        foreach my $caller (@stack) {
+        
+            my ($package, $file, $line, $subroutine) = @{$caller};
+            $message .= "\n    [*] Package:    " . $package .
+                        "\n        File:       " . $file .
+                        "\n        Line:       " . $line .
+                        "\n        Subroutine: " . $subroutine . "\n";
+        
+        }
+        
+    }
+    
+    $message .= "\n    -> Caught";
+
+}
 
 sub is {
     
@@ -45,22 +109,22 @@ sub checkparameters {
     my ($default, $parameters) = @_;
     
     return unless(ref($default) eq "HASH" &&
-		  ref($parameters) eq "HASH");
+                  ref($parameters) eq "HASH");
     
     foreach my $key (keys %{$parameters}) {
 	
-	next if (!exists $default->{$key} ||
-		 substr($key, 0, 1) eq "_");
-	
-	if (ref($default -> {$key}) eq "ARRAY" &&
-	    ref($parameters -> {$key}) eq "ARRAY") {
-	    
-	    for(my $i=0;$i<@{$parameters->{$key}};$i++) { $default->{$key}->[$i] = $parameters->{$key}->[$i] if (defined $parameters->{$key}->[$i]); }
-	    
-	}
-	elsif (ref($default->{$key}) eq "HASH" &&
-	       ref($parameters->{$key}) eq "HASH") { $default->{$key} = checkparameters($default->{$key}, $parameters->{$key}); }
-	else { $default->{$key} = $parameters->{$key}; }
+        next if (!exists $default->{$key} ||
+                 substr($key, 0, 1) eq "_");
+        
+        if (ref($default -> {$key}) eq "ARRAY" &&
+            ref($parameters -> {$key}) eq "ARRAY") {
+            
+            for(my $i=0;$i<@{$parameters->{$key}};$i++) { $default->{$key}->[$i] = $parameters->{$key}->[$i] if (defined $parameters->{$key}->[$i]); }
+            
+        }
+        elsif (ref($default->{$key}) eq "HASH" &&
+               ref($parameters->{$key}) eq "HASH") { $default->{$key} = checkparameters($default->{$key}, $parameters->{$key}); }
+        else { $default->{$key} = $parameters->{$key} if (defined $parameters->{$key}); }
 	
     }
     
@@ -73,7 +137,7 @@ sub blessed {
     my $reference = shift;
     
     return(1) if (ref($reference) &&
-		  eval { $reference->can("can") });
+                  eval { $reference->can("can") });
 
 }
 
@@ -146,52 +210,6 @@ sub clonefh {
     
 }
 
-sub mktree {
-    
-    my $directories = shift;
-    
-    my ($current, $created);
-    $created = 0;
-    
-    return unless(defined $directories);
-    
-    foreach my $directory (split(/\//, $directories)) {
-	
-	$current .= $directory . "/";
-	
-	if (defined $directory &&
-	    !-d $current) {
-	    
-	    mkdir $current or return;
-	    $created++;
-	    
-	}
-	
-    }
-    
-    return($created);
-    
-}
-
-sub deltree {
-
-    my $dir = shift;
-
-    opendir(my $dh, $dir);
-    foreach my $content (readdir($dh)) {
-    
-        next if ($content =~ m/^\.{1,2}$/);
-    
-        if (-d $dir . "/" . $content) { deltree($dir . "/" . $content) unless (rmdir($dir . "/" . $content)); }
-        else { unlink($dir . "/" . $content); }
-
-    }
-    closedir($dh);
-    
-    return(1) if (rmdir($dir));
-
-}
-
 sub uriescape {
     
     my $uri = shift;
@@ -241,14 +259,6 @@ sub striptags {
   
 }
 
-sub uniq {
-    
-    my %seen = ();
-    
-    return(grep { !$seen{$_}++ } @_);
-
-}
-
 sub questionyn {
     
     my ($question, $default) = @_;
@@ -279,6 +289,62 @@ sub questionyn {
     print $tail;
     
     return(1) if (lc($answer) eq "y");
+    
+}
+
+sub randint {
+    
+    my $bits = shift || 16;
+    
+    my %bits = ( 4  => 0xf,
+                 8  => 0xff,
+                 16 => 0xffff,
+                 32 => 0xffffffff );
+    
+    throw("Invalid number of bits") if (!exists $bits{$bits});
+    
+    return(int(rand($bits{$bits})));
+    
+}
+
+sub randnum { return(_randstring("n", $_[0])); }
+
+sub randalpha { return(_randstring("a", $_[0])); }
+
+sub randalphanum { return(_randstring("an", $_[0])); }
+
+sub randmixed { return(_randstring("m", $_[0])); }
+
+sub which {
+    
+    my $file = shift || return();
+    
+    for (map { File::Spec->catfile($_, $file) } File::Spec->path()) { return($_) if (-x $_); }
+    
+    return();
+    
+}
+
+sub _randstring {
+    
+    my $type = shift;
+    my $length = shift if (@_);
+    
+    $length =~ s/[^\d]//g;
+    $length ||= 1;
+    
+    my (@alpha, @num, @punct, %chars);
+    @alpha = ("a" .. "z", "A" .. "Z");
+    @num = ("0" .. "9");
+    @punct = map { chr($_); } (33 .. 47, 58 .. 64, 91 .. 96, 123 .. 126);
+    
+    %chars = ( a  => \@alpha,
+               n  => \@num,
+               an => [@alpha, @num],
+               p  => \@punct,
+               m  => [@alpha, @num, @punct] );
+    
+    return(join("", map { $chars{$type}->[int(rand(@{$chars{$type}}))]} (0 .. $length - 1)));
     
 }
 

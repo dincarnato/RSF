@@ -141,7 +141,7 @@ sub phyper {   # phyper returns the probability of having $i OR MORE successes
         
         Core::Utils::warn("phyper() function returned a NaN");
             
-        return(NAN);
+        return(nan);
         
     }
     
@@ -216,7 +216,7 @@ sub fisher {
             
             Core::Utils::warn("fisher() function returned a NaN");
             
-            return(NAN);
+            return(nan);
             
         }
         
@@ -247,7 +247,7 @@ sub _fisher {
         
         Core::Utils::warn("_fisher() function returned a NaN");
         
-        return(NAN);
+        return(nan);
         
     }
 
@@ -311,7 +311,7 @@ sub gammln {
                      -0.21026444172410488319e-3, 0.21743961811521264320e-3, -.16431810653676389022e-3,
                      0.84418223983852743293e-4, -0.26190838401581408670e-4, 0.36899182659531622704e-5);
     
-    if ($x < 0.5) { return(log(PI / (sin(PI * $x)) - gammln(1 - $x))); }
+    if ($x < 0.5) { return(log(pi / (sin(pi * $x)) - gammln(1 - $x))); }
     else {
         
         my $tmp = $coefficients[0];
@@ -609,12 +609,12 @@ sub qnorm {
     
         Core::Utils::warn("qnorm() function returned a NaN");
         
-        return(NAN);
+        return(nan);
         
     }
     
-    return(INF) if ($p == 1);
-    return(nINF) if ($p == 0);
+    return(inf) if ($p == 1);
+    return(ninf) if ($p == 0);
     
     my ($split, $q, $r, $ppnd,
         @a, @b, @c, @d);

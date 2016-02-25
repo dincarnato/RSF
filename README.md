@@ -1,4 +1,4 @@
-RSF - RNA Structure Framework (v0.1.0)
+RSF - RNA Structure Framework (v1.0.0a)
 
 Epigenetics Unit @ HuGeF [Human Genetics Foundation]
 

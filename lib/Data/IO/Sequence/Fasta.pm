@@ -17,7 +17,6 @@
 package Data::IO::Sequence::Fasta;
 
 use strict;
-use Carp;
 use Core::Utils;
 use Data::Sequence;
 use Data::Sequence::Utils;
@@ -43,6 +42,8 @@ sub read {
         return;
         
     }
+    
+    push(@{$self->{_prev}}, tell($fh));
     
     local $/ = "\n>";
     $stream = <$fh>;
@@ -111,12 +112,12 @@ sub write {
     my $self = shift;
     my @sequences = @_ if (@_);
     
-    $self->throw("Filehandle isn't in write/append mode") unless ($self->{mode} =~ m/^w\+?$/);
+    $self->throw("Filehandle isn't in write/append mode") unless ($self->mode() =~ m/^w\+?$/);
     
-    for(my $i=0;$i<@sequences;$i++) {
+    foreach my $sequence (@sequences) {
     
-        if (!blessed($sequences[$i]) ||
-            !$sequences[$i]->isa("Data::Sequence")) {
+        if (!blessed($sequence) ||
+            !$sequence->isa("Data::Sequence")) {
             
             $self->warn("Method requires a valid Data::Sequence object");
             
@@ -126,7 +127,7 @@ sub write {
     
         my ($fh, $id, $sequence);
         $fh = $self->{_fh};
-        $sequence = $sequences[$i]->sequence();
+        $sequence = $sequence->sequence();
     
         if (!defined $sequence) {
             
@@ -138,14 +139,14 @@ sub write {
     
         $self->{_lastid} = 1 unless($self->{_lastid});
     
-        if (!defined $sequences[$i]->id()) {
+        if (!defined $sequence->id()) {
         
-            if (defined $sequences[$i]->gi()) {
+            if (defined $sequence->gi()) {
             
-                $id = "gi|" . $sequences[$i]->gi();
-                $id .= "|ref|" . $sequences[$i]->accession() if defined($sequences[$i]->accession());
-                $id .= "." . $sequences[$i]->version() if defined($sequences[$i]->version() &&
-                                                                  $sequences[$i]->accession !~ m/\.\w+$/);
+                $id = "gi|" . $sequence->gi();
+                $id .= "|ref|" . $sequence->accession() if defined($sequence->accession());
+                $id .= "." . $sequence->version() if defined($sequence->version() &&
+                                                             $sequence->accession !~ m/\.\w+$/);
             
             }
             else {
@@ -156,15 +157,13 @@ sub write {
             }
         
         }
-        else { $id = $sequences[$i]->id(); }
+        else { $id = $sequence->id(); }
     
-        $id .= " " . $sequences[$i]->description() if defined($sequences[$i]->description());
+        $id .= " " . $sequence->description() if defined($sequence->description());
         $sequence =~ s/(\w{60})/$1\n/g;
     
         print $fh ">" . $id . "\n" .
                   $sequence . "\n\n";
-              
-        $self->flush();
         
     }
     

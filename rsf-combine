@@ -1,0 +1,337 @@
+#!/usr/bin/perl
+
+##
+# RSF Combine (v1.0.0a)
+# Epigenetics Unit @ HuGeF [Human Genetics Foundation]
+#
+# Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+# Summary: Produces secondary structures for analyzed transcripts using 
+#          structural data to guide folding
+#
+# This program is free software, and can be redistribute  and/or modified
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# any later version.
+#
+# Please see <http://www.gnu.org/licenses/> for more informations.
+##
+
+use strict;
+use Config;
+use File::Basename;
+use File::Path qw(mkpath rmtree);
+use FindBin qw($Bin);
+use Getopt::Long qw(:config no_ignore_case);
+use threads;
+use threads::shared;
+use Thread::Queue;
+use XML::Simple;
+
+use lib $Bin . "/lib";
+
+use Core::Mathematics qw(:all);
+use Core::Statistics;
+use Core::Utils;
+use Data::IO::XML;
+use Term::Constants qw(:screen);
+
+die "\n  [!] Error: This program requires ithreads." .
+    "\n             Please recompile Perl with ithreads and try again\n\n" unless(exists $Config{useithreads});
+
+$|++;
+
+my ($output, $overwrite, $stdev, $help,
+    $error, $threads, $queue, $decimals,
+    @spd, @pool, %spd);
+
+$output = "combined";
+$decimals = 3;
+$threads = 1;
+
+my %results : shared;
+%results = ( diffseq   => 0,
+             diffscore => 0,
+             diffnorm  => 0,
+             failed    => 0,
+             combined  => 0 );
+
+do {
+    
+    local $SIG{__WARN__} = sub { };
+
+    GetOptions( "h|help"                    => \$help,
+                "o|output-dir=s"            => \$output,
+                "ow|overwrite"              => \$overwrite,
+                "s|stdev"                   => \$stdev,
+                "p|processors=i"            => \$threads,
+                "d|decimals=i"              => \$decimals ) or help(1);
+    
+    @spd = uniq(@ARGV);
+
+};
+
+help() if ($help);
+
+$output =~ s/\/?$/\// if (defined $output);
+
+##
+# Input validation
+##
+
+die "\n  [!] Error: No output directory specified\n\n" unless(defined $output);
+die "\n  [!] Error: Not enough SPD directories/files specified\n\n" if (@spd < 2);
+die "\n  [!] Error: Number of processors must be an integer greater than 0\n\n" if ($threads < 1);
+die "\n  [!] Error: Decimals value must be an integer comprised between 1 and 10\n\n" if ($decimals < 1 ||
+                                                                                          $decimals > 10);
+
+print "\n[+] Importing input SPD directories\/files...";
+
+for (@spd) {
+    
+    die "\n\n  [!] Error: Provided SPD directory\/file doesn't exist\n\n" if (!-e $_);
+    
+    if (-d $_) {
+        
+        $_ =~ s/\/?$/\//;
+        
+        opendir(my $dh, $_) or die "\n\n  [!] Error: Unable to read from input directory \"" . $_ . "\" (" . $! . ")\n\n";
+        while(my $file = readdir($dh)) {
+        
+            next if ($file !~ m/\.spd$/);
+            
+            $file =~ s/\.spd//;
+            $spd{$file}++;
+            
+        }
+        close($dh);
+        
+    }
+    else { $spd{(fileparse($_, ".spd"))[0]}++; }
+    
+}
+
+# Delete all transcripts that are not common to all SPD directories
+for (keys %spd) { delete($spd{$_}) if ($spd{$_} != @spd); }
+
+print " " . (keys %spd) . " common transcripts.";
+
+die "\n\n  [!] Error: No common transcript ID found between SPD directories\/files\n\n" unless(keys %spd);
+
+print "\n[+] Making output directory...";
+
+if (-e $output) {
+
+    if ($overwrite) {
+        
+        rmtree($output, { safe      => 1,
+                          keep_root => 0,
+                          error     => \$error });
+        
+        die "\n\n  [!] Error: Unable to overwrite output directory (" . $error->[0]->{each(%{$error->[0]})} . ")\n\n" if (@{$error});
+        
+        
+        
+    }
+    else { die "\n\n  [!] Error: Output directory already exists." .
+               "\n      Please use -ow (or --overwrite) to overwrite output directory\n\n"; }
+    
+}
+
+mkpath($output, { mode  => 0755,
+                  error => \$error }); 
+    
+die "\n\n  [!] Error: Unable to create output directory (" . $error->[0]->{each(%{$error->[0]})} . ")\n\n" if (@{$error});
+
+print "\n[+] Combining reactivities [Last: none]";
+
+$queue = Thread::Queue->new();
+
+@pool = map{ threads->create(\&combine, $queue) } 1 .. $threads;
+
+$queue->enqueue($_) for (keys %spd);
+$queue->enqueue((undef) x $threads);
+
+$_->join() for(@pool);
+
+print "\n[+] Combination statistics:\n" .
+      "\n  [*] Combined transcripts:  " . $results{combined} .
+      "\n  [*] Discarded transcripts: " . $results{failed} . " total" .
+      "\n                             " . ($results{failed} - $results{diffseq} - $results{diffscore} - $results{diffnorm}) . " SPD parsing failed" .
+      "\n                             " . $results{diffseq} . " mismatch between transcript sequences" .
+      "\n                             " . $results{diffscore} . " mismatch between scoring methods" .
+      "\n                             " . $results{diffnorm} . " mismatch between normalization methods";
+
+print "\n\n[+] All done.\n\n";
+
+sub combine {
+    
+    my $queue = shift;
+    
+    while (my $id = $queue->dequeue()) {
+        
+        my ($spdref, $sequence, $scoring, $reactive,
+            $norm, $spd, $mean, $std, $attributes,
+            @profile, @mean, @stdev);
+        
+        for (@spd) {
+            
+            my ($file, @reactivity);
+            $file = -d $_ ? $_ . $id . ".spd" : $_;
+            
+            eval {
+                
+                no warnings;
+                
+                $spdref = XMLin($file);
+                $spdref->{transcript}->{sequence} =~ s/\s+?//g;
+                $sequence = $spdref->{transcript}->{sequence} if (!defined $sequence);
+                $scoring = $spdref->{scoring} if (!defined $scoring);
+                $norm = $spdref->{norm} if (!defined $norm);
+                $reactive .= $spdref->{reactive};
+                
+                if ($sequence ne $spdref->{transcript}->{sequence}) {
+                    
+                    lock(%results);
+                    $results{diffseq}++;
+                    
+                    die;
+                    
+                }
+                
+                if ($scoring ne $spdref->{scoring}) {
+                    
+                    lock(%results);
+                    $results{diffscore}++;
+                    
+                    die;
+                    
+                }
+                
+                if ($norm ne $spdref->{norm}) {
+                    
+                    lock(%results);
+                    $results{diffnorm}++;
+                    
+                    die;
+                    
+                }
+                
+            };
+            
+            last if ($@);
+            
+            $spdref->{transcript}->{reactivity} =~ s/\s+?//g;
+            @reactivity = split(/,/, $spdref->{transcript}->{reactivity});
+            
+            push(@{$profile[$-[0]]}, $reactivity[$-[0]]) while($sequence =~ m/[$spdref->{reactive}]/g);
+            push(@{$profile[$-[0]]}, "NaN") while (@{$profile[$-[0]]} < length($sequence));
+            
+        }
+        
+        if ($@) { # Exception from eval
+            
+            lock(%results);
+            $results{failed}++;
+            
+            undef($@);
+            
+            next;
+                
+        } 
+        
+        for (@profile) { 
+            
+            if (ref($_) eq "ARRAY" &&
+                !isnan(@{$_})) {
+                
+                push(@mean, sprintf("%." . $decimals . "f", mean(@{$_})));
+                push(@stdev, sprintf("%." . $decimals . "f", stdev(@{$_})));
+                
+            }
+            else {
+                
+                push(@mean, "NaN");
+                push(@stdev, "NaN");
+                
+            }
+            
+        }
+        
+        $reactive = join("", sort(uniq(split(//, $reactive))));
+        
+        { lock(%results);
+          $results{combined}++; }
+        
+        # For nicer formatting
+        $sequence =~ s/(\w{60})/$1\n/g; 
+        $mean = join(",", @mean);
+        $std = join(",", @stdev);
+        $mean =~ s/((?:[\w\.]+,){60})/$1\n/g;
+        $std =~ s/((?:[\w\.]+,){60})/$1\n/g;
+        
+        $attributes = { combined => "TRUE",
+                        reactive => $reactive,
+                        scoring  => $scoring,
+                        norm     => $norm };
+        
+        $spd = Data::IO::XML->new( file      => $output . $id . ".spd",  
+                                   mode      => "w",
+                                   heading   => 1,
+                                   indent    => 0,
+                                   autoclose => 1,
+                                   verbosity => -1 );
+        
+        $spd->opentag("data", $attributes);
+        $spd->opentag("transcript", { id     => $id,
+                                      length => scalar(@mean) });
+        $spd->opentag("sequence");
+        $spd->addtext($sequence);
+        $spd->closelasttag();
+        $spd->opentag("reactivity");
+        $spd->addtext($mean);
+        $spd->closelasttag();
+    
+        if ($stdev) { # Report stdev
+        
+            $spd->opentag("error");
+            $spd->addtext($std);
+        
+        }
+        
+        $spd->write();
+        
+        print CLRRET . "[+] Combining reactivities [Last: $id]";
+        
+    }
+    
+    threads->exit();
+    
+}
+
+sub help {
+    
+    print "\n  [!] Error: Invalid option. Please check the help\n" if ($_[0]);
+    
+    die <<HELP;
+ 
+ RSF Combine (v1.0.0a)
+ Epigenetics Units @ HuGeF [Human Genetics Foundation]
+ Group leader: Prof. Salvatore Oliviero
+    
+ Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+ Summary: Combines multiple experiments into a single reactivity profile
+ 
+ Usage:   rsf-combine [Options] SPD_folder_rep1/ SPD_folder_rep2/ .. SPD_folder_repn/           # Whole transcriptome
+          rsf-combine [Options] file_rep1.spd file_rep2.spd .. file_repn.spd                    # Single transcript
+ 
+ Options                             Description
+ -p  or --processors                 Number of processors to use (Default: 1)
+ -o  or --output-dir                 Output directory (Default: combined/)
+ -ow or --overwrite                  Overwrites output directory (if the specified path already exists)
+ -s  or --stdev                      When multiple replicates are combined, an optional "error" tag will be reported
+                                     within the output SPD files, containing the per-base reactivity's standard deviation
+ -d  or --decimals                   Number of decimals for reporting reactivities (1-10, Default: 3)
+ 
+HELP
+    
+}

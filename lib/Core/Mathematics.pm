@@ -18,13 +18,14 @@ package Core::Mathematics;
 
 use strict;
 use POSIX;
+use Core::Utils;
 
-use constant E    => exp(1);
-use constant PI   => 4 * atan2(1, 1);
-use constant INF  => 1e9999;
-use constant pINF => INF;
-use constant nINF => -(INF);
-use constant NAN  => (INF / INF);
+use constant e    => exp(1);
+use constant pi   => 4 * atan2(1, 1);
+use constant inf  => 0 + q{Inf};
+use constant pinf => inf;
+use constant ninf => -(inf);
+use constant nan  => 0 + q{NaN};
 
 use base qw(Exporter);
 
@@ -32,7 +33,7 @@ our @EXPORT = qw(isint isfloat isexp isinf
                  isnan isnumeric ispositive isnegative
                  isreal);
 
-our %EXPORT_TAGS = ( constants => [ qw(E PI INF pINF nINF NAN) ],
+our %EXPORT_TAGS = ( constants => [ qw(e pi inf pinf ninf nan) ],
                      functions => [ qw(logarithm min max mean
                                        average geomean midrange stdev
                                        mode median round sum
@@ -81,7 +82,7 @@ sub isnan {
     
     my @values = @_;
     
-    for (@values) { return if ($_ !~ m/^NaN$/i); }
+    for (@values) { return if ($_ !~ m/^[+-]?NaN?$/i); }
     
     return(1);
     
@@ -171,17 +172,17 @@ sub percentage2frequency {
 sub logarithm {
 
     my $argument = shift;
-    my $base = shift // E;
+    my $base = shift // e;
     
     Core::Utils::throw("Logarithm argument is not numeric") if (!isnumeric($argument));
     Core::Utils::throw("Invalid logarithm base") if (!isnumeric($base));
     
-    return(INF) if ($base == 1);
-    return(nINF) if ($argument == 0);
-    return(NAN) if (isnegative($argument) ||
+    return(inf) if ($base == 1);
+    return(inf) if ($argument == 0);
+    return(nan) if (isnegative($argument) ||
                     isnegative($base));
     
-    return(log($argument) / ($base ? log($base) : nINF));
+    return(log($argument) / ($base ? log($base) : ninf));
     
 }
 

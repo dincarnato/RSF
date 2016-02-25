@@ -156,6 +156,8 @@ sub _openfh {
         
     $self->{_fh} = $fh;
     
+    $self->flush();
+    
 }
 
 sub read {
@@ -182,7 +184,8 @@ sub back {
     $self->throw("Backward index must be a positive integer") unless (isint($index) &&
                                                                       ispositive($index));
     
-    if (ref($self) =~ m/^Data::IO::(?:Track|Sequence)::\w+$/) {
+    #if (ref($self) =~ m/^Data::IO::(?:Track|Sequence)::\w+$/) {
+    if (ref($self) =~ m/Data::IO::\w+$/) {
         
         splice(@{$self->{_prev}}, (@{$self->{_prev}} - $index), $index);
         

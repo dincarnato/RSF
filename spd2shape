@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 ##
-# SPD2Shape (v0.1.0)
+# SPD2Shape (v1.0.0a)
 # Epigenetics Unit @ HuGeF [Human Genetics Foundation]
 #
 # Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
@@ -16,56 +16,46 @@
 ##
 
 use strict;
+use FindBin qw($Bin);
 use Getopt::Long qw(:config no_ignore_case);
+use XML::Simple;
 
-my ($avoid, $mincoverage, $help, $i);
-$mincoverage = 1;
-$i = 1;
+use lib $Bin . "/lib";
+
+use Core::Mathematics;
+
+my ($spd, $help, $i, @reactivity);
+$i = 0;
 
 do {
     
     local $SIG{__WARN__} = sub { };
 
-    GetOptions( "h|help"                => \$help,
-                "a|avoid-non-canonical" => \$avoid,
-                "m|min-coverage=i"      => \$mincoverage ) or help(1);
+    GetOptions( "h|help" => \$help ) or help(1);
 
 };
 
 help() if ($help);
 
-die "\n  [!] Error: Minimum coverage value must be greater than 0\n\n" unless($mincoverage > 0);
 die "\n  [!] Error: No SPD file has been specified\n\n" unless($ARGV[0]);
 die "\n  [!] Error: Specified SPD file doesn't exist\n\n" unless(-e $ARGV[0]);
 
-open(my $fh, "<" . $ARGV[0]) or die "\n  [!] Error: Unable to read from input SPD file (" . $! . ")\n\n";
-while(<$fh>) {
+eval { $spd = XMLin($ARGV[0]); };
 
-    chomp();
+if ($@) { die "\n  [!] Error: Unable to read from input SPD file (" . $@ . ")\n\n"; }
 
-    my @line = split /\t/, $_;
+$spd->{transcript}->{reactivity} =~ s/\s+?//g;
+@reactivity = split(/,/, $spd->{transcript}->{reactivity});
 
-    die "\n  [!] Error: Line " . $i . " has less than 13 fields\n\n" if (@line < 13);
-
-    if ($line[9] != 0) { print $i . " " . $line[9] . "\n"; }
-    else {
-        
-        if ((!$avoid &&
-             ($line[11] > $mincoverage ||
-              $line[12] > $mincoverage)) ||
-            ($avoid &&
-             (($line[0] =~ m/^[AC]$/ &&
-               $line[11] > $mincoverage) ||
-              ($line[0] =~ m/^[GT]$/ &&
-               $line[12] > $mincoverage)))) { print $i . " 0\n"; }
-        else { print $i . " -999\n"; }
-
-    }
-
+for (@reactivity) {
+    
     $i++;
-
+    
+    next if (isnan($_));
+    
+    print $i . " " . $_ . "\n";
+    
 }
-close($fh);
 
 sub help {
     
@@ -73,23 +63,14 @@ sub help {
     
     die <<HELP;
  
- SPD2Shape (v0.1.0)
+ SPD2Shape (v1.0.0a)
  Epigenetics Units @ HuGeF [Human Genetics Foundation]
  Group leader: Prof. Salvatore Oliviero
     
  Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
  Summary: Generates RNAstructure's SHAPE constraint files from SPD files
  
- Usage:   spd2shape [Options] <SPD file> > output.shape
- 
- Options                             Description
- -a  or --avoid-non-canonical        The 0 reactivities are reported only if the coverage in DMS treatment for A/C base,
-                                     or in the CMCT treatment for G/U bases is higher than -m.
-                                     Note: By default, 0 reactivities are reported if the coverage is higher than -m in
-                                           any of the two treatments
- -m  or --min-coverage               Minimum base coverage for reporting a 0 reactivity
-                                     Note: Bases with reactivity 0, but coverage behind this threshold will be reported
-                                           with a score of -999 in the SHAPE data file
+ Usage:   spd2shape <SPD file> > output.shape
  
 HELP
 

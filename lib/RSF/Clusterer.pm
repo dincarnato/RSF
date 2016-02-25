@@ -14,7 +14,7 @@
 # Please see <http://www.gnu.org/licenses/> for more informations.
 ##
 
-package Clusterer;
+package RSF::Clusterer;
 
 use strict;
 use Carp;

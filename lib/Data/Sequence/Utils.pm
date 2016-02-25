@@ -22,16 +22,18 @@ use Core::Utils;
 use base qw(Exporter);
 
 our @EXPORT = qw(isdna isrna isna isaa
-                 isseq isalignment rev dnacomp
-                 rnacomp dnarevcomp rnarevcomp dna2rna
-                 rna2dna translate aa1to3 nt2iupac
-                 iupac2regex shuffle);
+                 isseq isalignment isiupac rev
+                 dnacomp rnacomp dnarevcomp rnarevcomp
+                 dna2rna rna2dna translate aa1to3
+                 nt2iupac iupac2nt iupac2regex shuffle);
 
 sub isdna { return(is($_[0], $_[1] . "ACGNT")); }
 
 sub isrna { return(is($_[0], $_[1] . "ACGNU")); }
 
 sub isna { return(is($_[0], $_[1] . "ACGNTU")); }
+
+sub isiupac { return(is($_[0], $_[1] . "ACGTUBDHKMNRSVWY")); }
 
 sub isaa { return(is($_[0], $_[1] . "ACDEFGHIKLMNPQRSTVWXY*")); }
 
@@ -51,10 +53,10 @@ sub complement {
     
     my $sequence = uc(shift);
     
-    return if (!isna($sequence, "-"));
+    return if (!isna($sequence, "BDHKMNRSVWY-"));
     
-    if (isdna($sequence, "-")) { $sequence =~ tr/ACGT/TGCA/; }
-    else { $sequence =~ tr/ACGU/UGCA/; }
+    if (isdna($sequence, "BDHKMNRSVWY-")) { return(dnarevcomp($sequence)); }
+    else { return(rnarevcomp($sequence)); }
     
     return($sequence);
     
@@ -70,11 +72,11 @@ sub revcomp {
 
 sub dnacomp {
     
-    my $sequence = rna2dna(uc(shift));
+    my $sequence = rna2dna(shift);
     
-    return unless(isdna($sequence, "-"));
+    return unless(isdna($sequence, "BDHKMNRSVWY-"));
     
-    $sequence =~ tr/ACGT/TGCA/;
+    $sequence =~ tr/ACGTVHRMBDYK/TGCABDYKVHRM/;
     
     return($sequence);
     
@@ -82,13 +84,9 @@ sub dnacomp {
 
 sub rnacomp {
     
-    my $sequence = dna2rna(uc(shift));
+    my $sequence = shift;
     
-    return unless(isrna($sequence, "-"));
-    
-    $sequence =~ tr/ACGU/UGCA/;
-    
-    return($sequence);
+   return(dna2rna(dnacomp($sequence)));
     
 }
 
@@ -112,7 +110,7 @@ sub dna2rna {
     
     my $sequence = uc(shift);
     
-    return if (!isna($sequence, "-"));
+    return if (!isiupac($sequence, "-"));
     
     $sequence =~ tr/T/U/;
     
@@ -124,7 +122,7 @@ sub rna2dna {
     
     my $sequence = uc(shift);
     
-    return if (!isna($sequence, "-"));
+    return if (!isiupac($sequence, "-"));
     
     $sequence =~ tr/U/T/;
     
@@ -326,6 +324,36 @@ sub nt2iupac {
     }
          
     return($iupac);
+    
+}
+
+sub iupac2nt {
+
+    my $iupac = shift;
+    
+    return unless(isiupac($iupac, "-"));
+    
+    my (@nt);
+    
+    for (split(//, $iupac)) {
+    
+        $_ =~ s/N/ACGT/g;
+        $_ =~ s/R/AG/g;
+        $_ =~ s/Y/CT/g;
+        $_ =~ s/W/AT/g;
+        $_ =~ s/S/CG/g;
+        $_ =~ s/M/AC/g;
+        $_ =~ s/K/GT/g;
+        $_ =~ s/B/CGT/g;
+        $_ =~ s/H/ACT/g;
+        $_ =~ s/D/AGT/g;
+        $_ =~ s/V/ACG/g;
+        
+        push(@nt, $_);
+           
+    }
+    
+    return(wantarray() ? @nt : \@nt);
     
 }
 

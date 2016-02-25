@@ -1,0 +1,568 @@
+#!/usr/bin/perl
+
+##
+# RSF Norm (v1.0.0a)
+# Epigenetics Unit @ HuGeF [Human Genetics Foundation]
+#
+# Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+# Summary: Performs normalization of RNA structure probing data
+#
+# This program is free software, and can be redistribute  and/or modified
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# any later version.
+#
+# Please see <http://www.gnu.org/licenses/> for more informations.
+##
+
+use strict;
+use Config;
+use File::Basename;
+use File::Path qw(mkpath rmtree);
+use FindBin qw($Bin);
+use Getopt::Long qw(:config no_ignore_case);
+use threads;
+use threads::shared;
+use Thread::Queue;
+
+use lib $Bin . "/lib";
+
+use Core::Mathematics qw(:all);
+use Core::Statistics;
+use Data::IO::XML;
+use RSF::Config;
+use RSF::Data::IO::RTC;
+use Term::Constants qw(:screen);
+
+$|++;
+
+die "\n  [!] Error: This program requires ithreads." .
+    "\n             Please recompile Perl with ithreads support and try again\n\n" unless(defined $Config{useithreads});
+
+my ($help, $output, $overwrite, $configfile,
+    $scoremethod, $normmethod, $normwin, $winoffset,
+    $reactive, $independent, $pseudocount, $maxscore,
+    $meancov, $mediancov, $untreated, $treated,
+    $index, $config, $error, $threads,
+    $rtc, $queue, $hasctrl, $decimals,
+    $nan, @index, @pool, @ids);
+
+my %results : shared;
+%results = ( cov     => 0,
+             incov   => 0,
+             diffseq => 0,
+             nouid   => 0 );
+
+$threads = 1;
+$decimals = 3;
+
+do {
+    
+    local $SIG{__WARN__} = sub { };
+
+    GetOptions( "h|help"               => \$help,
+                "o|output-dir=s"       => \$output,
+                "ow|overwrite"         => \$overwrite,
+                "c|config-file=s"      => \$configfile,
+                "sm|scoring-method=s"  => \$scoremethod,
+                "nm|norm-method=s"     => \$normmethod,
+                "nw|norm-window=i"     => \$normwin,
+                "wo|window-offset=i"   => \$winoffset,
+                "rb|reactive-bases=s"  => \$reactive,
+                "ni|norm-independent"  => \$independent,
+                "pc|pseudocount=i"	   => \$pseudocount,
+                "s|max-score=s"        => \$maxscore,
+                "mc|mean-coverage=s"   => \$meancov,
+                "ec|median-coverage=s" => \$mediancov,
+                "u|untreated=s"        => \$untreated,
+                "t|treated=s"          => \$treated,
+                "i|index=s"            => \$index,
+                "d|decimals=i"         => \$decimals,
+                "p|processors=i"       => \$threads,
+                "n|nan"                => \$nan ) or help(1);
+
+};
+
+help() if ($help);
+
+die "\n  [!] Error: Number of processors must be an integer greater than 0\n\n" if ($threads < 1);
+die "\n  [!] Error: Decimals value must be an integer comprised between 1 and 10\n\n" if ($decimals < 1 ||
+                                                                                          $decimals > 10);
+
+print "\n[+] Parsing configuration...";
+
+print "\n\n  [!] Warning: Provided configuration file doesn't exist. Will be created...\n" if (defined $configfile &&
+                                                                                               !-e $configfile);
+
+$config = RSF::Config->new( file            => $configfile,
+                            scoremethod     => $scoremethod,
+                            normmethod      => $normmethod,
+                            normwindow      => $normwin,
+                            windowoffset    => $winoffset,
+                            reactivebases   => $reactive,
+                            normindependent => $independent,
+                            pseudocount     => $pseudocount,
+                            maxscore        => $maxscore,
+                            meancoverage    => $meancov,
+                            mediancoverage  => $mediancov );
+
+$config->summary();
+$hasctrl = $config->scoremethod() == 2 ? 0 : 1;
+
+die "\n\n  [!] Error: No treated sample RTC file provided\n\n" if (!defined $treated);
+die "\n\n  [!] Error: Provided treated sample RTC file doesn't exist\n\n" if (!-e $treated);
+
+if (defined $untreated) { print "\n  [!] Warning: Rouskin method for normalization has been chosen. Ignoring untreated sample file...\n" if (!$hasctrl); }
+else { die "\n  [!] Error: No untreated sample RTC file provided\n\n" if (!-e $untreated &&
+                                                                          $hasctrl); }
+
+if (!defined $output) {
+    
+    my ($uid, $tid);
+    $uid = fileparse($untreated, qr/\.[^.]*/) if (defined $untreated);
+    $tid = fileparse($treated, qr/\.[^.]*/);
+    
+    $output = $config->scoremethod() == 2 ? $tid . "_norm/" : $tid . "_vs_" . $uid . "_norm/";
+    
+}
+else { $output =~ s/\/?$/\//; }
+
+print "\n[+] Making output directory...";
+
+if (-e $output) {
+
+    if ($overwrite) {
+        
+        rmtree($output, { safe      => 1,
+                          keep_root => 0,
+                          error     => \$error });
+        
+        die "\n\n  [!] Error: Unable to overwrite output directory (" . $error->[0]->{each(%{$error->[0]})} . ")\n\n" if (@{$error});
+        
+        
+        
+    }
+    else { die "\n\n  [!] Error: Output directory already exists." .
+               "\n      Please use -ow (or --overwrite) to overwrite output directory\n\n"; }
+    
+}
+
+mkpath($output, { mode  => 0755,
+                  error => \$error }); 
+    
+die "\n\n  [!] Error: Unable to create output directory (" . $error->[0]->{each(%{$error->[0]})} . ")\n\n" if (@{$error});
+
+@index = split(/,/, $index);
+
+# In case no index has been provided, we rebuild the index before generating the working threads
+# The new index will be generated in the same path of the rtc file, with extension .rti
+if (!@index) {
+    
+    print "\n[+] Regenerating RTI index files...";
+    
+    $rtc = RSF::Data::IO::RTC->new( file       => $untreated,
+                                    buildindex => 1 ) if ($hasctrl);
+    
+}
+
+$rtc = RSF::Data::IO::RTC->new( file       => $treated,
+                                index      => @index ? $index[-1] : undef,
+                                buildindex => 1 );
+
+print "\n[+] Loading transcript IDs... ";
+
+@ids = $rtc->ids();
+
+print scalar(@ids) . " transcripts loaded." .
+      "\n[+] Normalizing reactivities [Last: none]";
+
+$queue = Thread::Queue->new();
+
+@pool = map{ threads->create(\&norm, $queue) } 1 .. $threads;
+
+$queue->enqueue($_) for (@ids);
+$queue->enqueue((undef) x $threads);
+
+$_->join() for(@pool);
+
+print "\n[+] Normalization statistics:\n" .
+      "\n  [*] Covered transcripts:   " . $results{cov} .
+      "\n  [*] Discarded transcripts: " . ($results{incov} + $results{diffseq} + $results{nocov} + $results{nouid}) . " total" .
+      "\n                             " . $results{incov} . " insufficient coverage";
+      
+print "\n                             " . $results{diffseq} . " mismatch between treated and untreated sample sequence" .
+      "\n                             " . $results{nouid} . " absent in untreated sample reference" if ($hasctrl);
+
+print "\n\n[+] All done.\n\n";
+
+sub norm {
+    
+    my $queue = shift;
+    
+    my ($urtc, $trtc, $reactivity, $attributes,
+        $spd);
+    
+    $urtc = RSF::Data::IO::RTC->new( file  => $untreated,
+                                     index => @index ? $index[0] : $untreated . ".rti" ) if ($hasctrl);
+    
+    $trtc = RSF::Data::IO::RTC->new( file  => $treated,
+                                     index => @index ? $index[-1] : $treated . ".rti"); 
+    
+    while (my $id = $queue->dequeue()) {
+        
+        my ($tentry, $sequence, @tstops, @norm);
+        $tentry = $trtc->read($id);
+        
+        if ($tentry->meancoverage() < $config->meancoverage() ||
+            $tentry->mediancoverage() < $config->mediancoverage()) {
+            
+            lock(%results);
+            $results{incov}++;
+            
+            next;
+            
+        }
+        
+        $sequence = $tentry->sequence();
+        @tstops = $tentry->rtstops();
+        
+        if ($hasctrl) { # Ding method
+            
+            if (my $uentry = $urtc->read($id)) {
+                
+                my ($tmean, $umean, @ustops);
+                
+                if ($uentry->sequence() ne $sequence) {
+                    
+                    lock(%results);
+                    $results{diffseq}++;
+            
+                    next;
+                    
+                }
+                
+                if ($uentry->meancoverage() < $config->meancoverage() ||
+                    $uentry->mediancoverage() < $config->mediancoverage()) {
+                    
+                    lock(%results);
+                    $results{incov}++;
+            
+                    next;
+                    
+                }
+                
+                @ustops = $uentry->rtstops();
+                
+                for (0 .. $#tstops) {
+                    
+                    $ustops[$_] = log($ustops[$_] + $config->pseudocount());
+                    $tstops[$_] = log($tstops[$_] + $config->pseudocount());
+                    
+                }
+                
+                $umean = mean(@ustops);
+                $tmean = mean(@tstops);
+                
+                if (!$umean ||
+                    !$tmean) {
+                    
+                    lock(%results);
+                    $results{incov}++;
+                    
+                    next;
+                    
+                }
+                
+                $tstops[$_] = max(0, ($tstops[$_] / $tmean) - ($ustops[$_] / $umean)) for (0 .. $#tstops);
+                
+                # Normalization
+                # Extracts the reactivities for the specified reactive bases (separately if independent norm is required),
+                # and compute required normalization method. Normalized value are then added to the corresponding position in
+                # the @norm array (non-reactive bases will be left as undef)
+                foreach my $base ($config->normindependent() ? split(//, $config->reactivebases()) : $config->reactivebases()) {
+
+                    my (@basenorm);
+
+                    push(@basenorm, $tstops[$-[0]]) while($sequence =~ m/[$base]/g); # Extracts reactivities only on specified bases
+                    
+                    @basenorm = $config->normmethod() == 1 ? norm_28(@basenorm) : ($config->normmethod() == 2 ? winsor_90(@basenorm) : boxplot(@basenorm));
+                    
+                    $norm[$-[0]] = shift(@basenorm) while($sequence =~ m/[$base]/g);
+                    
+                } 
+                
+            }
+            else {
+            
+                lock(%results);
+                $results{nouid}++;
+                
+                next;
+                
+            }
+            
+        }
+        else { # Rouskin method
+            
+            my ($lasti, @last);
+            $lasti = 0;
+            
+            for(my $i = 0; $i + $config->normwindow() - 1 <= $#tstops; $i += $config->windowoffset()) {
+            
+                my ($winseq, @winstops, @winnorm);
+                $winseq = substr($sequence, $i, $config->normwindow());
+                @winstops = @tstops[$i .. $i + $config->normwindow() - 1];
+                
+                foreach my $base ($config->normindependent() ? split(//, $config->reactivebases()) : $config->reactivebases()) {
+                    
+                    my (@base, @basenorm);
+                    
+                    push(@base, $winstops[$-[0]]) while($winseq =~ m/[$base]/g); # Extracts reactivities only on specified bases
+                    
+                    @basenorm = $config->normmethod() == 1 ? norm_28(@base) : ($config->normmethod() == 2 ? winsor_90(@base) : boxplot(@base));
+                    @basenorm = (0) x scalar(@base) if (!@basenorm); # In case this window has not been covered
+                    
+                    $winnorm[$-[0]] = shift(@basenorm) while($winseq =~ m/[$base]/g);
+                    push(@winnorm, undef) while (@winnorm < length($winseq)); # If winseq doesn't end with a $base, winnorm will be shorter than winseq
+                   
+                }
+                
+                if (!@last) {
+                    
+                    # @last is always empty when windowoffset == normwindow
+                    
+                    @norm = (@norm, @winnorm[0 .. $config->windowoffset() - 1]);    # Fills first reactivity window
+                    @last = @winnorm[$config->windowoffset() .. $#winnorm];         # Fills remaining window for next cycle
+                    
+                }
+                else { # Never get here if windowoffset == normwindow because @last is always empty
+                    
+                    push(@norm, defined $last[$_] ? mean($last[$_], $winnorm[$_]) : undef) for (0 .. $#last); # Averages previous remaining window with current first window
+                    @last = @winnorm[$#last + 1 .. $#winnorm];                                                 # Fills remaining window for next cycle
+        
+                }
+    
+                $lasti = $i + $config->windowoffset();
+            
+            }
+            
+            if ($lasti < $#tstops) { # if Last < norm-win bases
+    
+                my ($winseq, @winstops, @winnorm);
+                $winseq = substr($sequence, $lasti);
+                @winstops = @tstops[$lasti .. $#tstops];
+                
+                foreach my $base ($config->normindependent() ? split(//, $config->reactivebases()) : $config->reactivebases()) {
+                    
+                    my (@base, @basenorm);
+                    
+                    push(@base, $winstops[$-[0]]) while($winseq =~ m/[$base]/g); # Extracts reactivities only on specified bases
+                    
+                    @basenorm = $config->normmethod() == 1 ? norm_28(@base) : ($config->normmethod() == 2 ? winsor_90(@base) : boxplot(@base));
+                    @basenorm = (0) x scalar(@base) if (!@basenorm); # In case this window has not been covered
+                    
+                    $winnorm[$-[0]] = shift(@basenorm) while($winseq =~ m/[$base]/g);
+                    push(@winnorm, undef) while (@winnorm < length($winseq)); # If winseq doesn't end with a $base, winnorm will be shorter than winseq
+                    
+                }
+                
+                push(@norm, defined $last[$_] ? ($config->windowoffset() < $config->normwindow() ? mean($last[$_], $winnorm[$_]) : $last[$_]) : undef) for (0 .. $#last); # Averages previous remaining window with current first window
+                
+                @norm = (@norm, @winnorm[$#last + 1 .. $#winnorm]);
+                
+            }
+            
+        }
+        
+        { lock(%results);
+          $results{cov}++; }
+        
+        if ($nan) {
+            
+            my @tcov = $tentry->coverage();
+            @norm = map { $tcov[$_] ? $norm[$_] : undef } 0 .. $#tcov;
+            
+            if ($hasctrl) {
+                
+                my @ucov = $tentry->coverage();
+                @norm = map { $ucov[$_] ? $norm[$_] : undef } 0 .. $#ucov;
+                
+            }
+            
+        }
+        
+        $reactivity = join(",", map { defined $_ ? sprintf("%." . $decimals . "f", $_) : "NaN" } @norm);
+        
+        # For nicer formatting
+        $sequence =~ s/(\w{60})/$1\n/g;
+        $reactivity =~ s/((?:[\w\.]+,){60})/$1\n/g;
+        
+        $attributes = { combined => "FALSE",
+                        reactive => $config->reactivebases(),
+                        scoring  => $config->scoremethod(1),
+                        norm     => $config->normmethod(1) };
+        
+        if ($config->scoremethod() == 1) { # Ding
+          
+            $attributes->{max} = $config->maxscore();
+            $attributes->{pseudo} = $config->pseudocount();
+          
+        }
+        else { # Rouskin
+          
+            $attributes->{offset} = $config->windowoffset();
+            $attributes->{win} = $config->normwindow();
+          
+        }
+        
+        $spd = Data::IO::XML->new( file      => $output . $id . ".spd",  
+                                   mode      => "w",
+                                   heading   => 1,
+                                   indent    => 0,
+                                   autoclose => 1,
+                                   verbosity => -1 );
+        
+        $spd->opentag("data", $attributes);
+        $spd->opentag("transcript", { id     => $id,
+                                      length => $tentry->length() });
+        $spd->opentag("sequence");
+        $spd->addtext($sequence);
+        $spd->closelasttag();
+        $spd->opentag("reactivity");
+        $spd->addtext($reactivity);
+        $spd->write();       
+        
+        print CLRRET . "[+] Normalizing reactivities [Last: $id]"; 
+        
+    }
+    
+    threads->exit();
+    
+}
+
+sub winsor_90 {  # 90% Winsorising
+    
+    my @reactivity = @_;
+    
+    return if (!@reactivity);
+    
+    my $percentile = percentile(\@reactivity, 0.95); # 95th percentile
+    
+    return() if ($percentile == 0);
+    
+    for (@reactivity) {
+        
+        $_ = $percentile if ($_ > $percentile);
+        $_ /= $percentile;
+        
+    }
+    
+    return(@reactivity);
+    
+}
+
+sub norm_28 {  # 2-8% Normalization
+    
+    my @reactivity = @_;
+    
+    return if (!@reactivity);
+    
+    my ($p2, $p8, $avg, @norm);
+    $p2 = round(@reactivity * 0.02);
+    $p8 = round(@reactivity * 0.08);
+    
+    @norm = sort {$b <=> $a} @reactivity;
+    
+    $avg += $norm[$_] for ($p2 .. ($p2 + $p8));
+    $avg /= $p8;
+    
+    return() if ($avg == 0);
+    
+    $_ = max(0, min($_/$avg, 1)) for(@reactivity);
+    
+    return(@reactivity);
+    
+}
+
+sub boxplot {
+    
+    my @reactivity = @_;
+    
+    return if (!@reactivity);
+    
+    my ($iqrange, $max, $p10, $avg,
+        @norm);
+    $iqrange = percentile(\@reactivity, 0.75) - percentile(\@reactivity, 0.25); # Interquartile range
+    $max = percentile(\@reactivity, 0.75) + ($iqrange * 1.5);                   # Above this value, data points are considered outliers
+    @norm = sort {$b <=> $a} @reactivity;
+    
+    for (@norm) { shift(@norm) if ($_ >= $max); }
+    
+    $p10 = round(@norm * 0.1);
+    
+    $avg += $norm[$_] for (0 .. $p10);
+    $avg /= $p10;
+    
+    return() if ($avg == 0);
+    
+    $_ = max(0, $_ / $avg) for (@reactivity); # Values will range between 0 and ~1.5 according to
+                                              # "SHAPE-Directed RNA Secondary Structure Prediction" (Low et al., 2010)
+    return(@reactivity);
+    
+}
+
+sub help {
+    
+    print "\n  [!] Error: Invalid option. Please check the help\n" if ($_[0]);
+    
+    die <<HELP;
+ 
+ RSF Norm (v1.0.0a)
+ Epigenetics Units @ HuGeF [Human Genetics Foundation]
+ Group leader: Prof. Salvatore Oliviero
+    
+ Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+ Summary: Performs normalization of RNA structure probing data
+ 
+ Usage:   rsf-norm [Options]
+ 
+ Options                             Description
+ -u  or --untreated                  Untreated sample RTC file
+ -t  or --treated                    Treated sample RTC file
+ -i  or --index                      A comma separated (no spaces) list of RTI index files for the provided RTC files.
+                                     Note: RTI files must be provided in the order: 1. Untreated, 2. Treated.
+                                           If a single RTI file is specified along with both untreated and treated sample,
+                                           it will be used for both samples.
+                                           If no RTI index is provided, it will be created at runtime, and stored in
+                                           the same folder of the untreated and treated samples.
+ -p  or --processors                 Number of processors to use (Default: 1)
+ -o  or --output-dir                 Output directory (Default: <treated>_vs_<untreated>/ for Ding method,
+                                                                <treated>/ for Rouskin method)
+ -ow or --overwrite                  Overwrites output directory (if the specified path already exists)
+ -c  or --config-file                A configuration file with normalization parameters
+                                     Note: If the provided file exists, this will override any command-line
+                                           specified parameter. If the provided file doesn't exist, it will
+                                           be generated using command-line specified (or default) parameters
+ -sm or --scoring-method             Specifies the score calculation method (1-2, Default: 1): [1] Ding et al., 2014
+                                                                                               [2] Rouskin et al., 2014
+ -nm or --norm-method                Specifies the normalization method (1-3, Default: 1): [1] 2-8%
+                                                                                           [2] 90% Winsorising 
+                                                                                           [3] Box-plot
+ -rb or --reactive-bases             Reactive bases to consider for signal normalization (Default: N)
+ -ni or --norm-independent           Each one of the reactive bases will be normalized independently
+ -mc or --mean-coverage              Discards any transcript with mean coverage below this threshold (>=0, Default: 1)
+ -ec or --median-coverage            Discards any transcript with median coverage below this threshold (>=0, Default: 1)
+ -d  or --decimals                   Number of decimals for reporting reactivities (1-10, Default: 3)
+ -n  or --nan                        Non-covered transcript positions will be reported as NaN in the reactivity profile
+ 
+ Scoring method #1 options (Ding et al., 2014)
+ -pc or --pseudocount                Pseudocount added to reactivities to avoid division by 0 (>0, Default: 1)
+ -s  or --max-score                  Score threshold for capping raw reactivities (>1, Default: 10)
+ 
+ Scoring method #2 options (Rouskin et al., 2014)
+ -nw or --norm-window                Window for signal normalization (>=3, Default: 50)
+ -wo or --window-offset              Offset for sliding window during normalization (Default: 0)
+ 
+HELP
+    
+}
