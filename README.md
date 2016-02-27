@@ -1,6 +1,6 @@
 # RSF - RNA Structure Framework (v1.0.0a)
 
-The recent advent of high-throughput methods for probing RNA secondary structures has enabled for the transcriptome-wide analysis of the RNA structurome.
+The recent advent of high-throughput methods for probing RNA secondary structures has enabled transcriptome-scale analysis of the RNA structurome.
 Despite the establishment of several methods for querying RNA secondary structures on a genome-wide scale (CIRS-seq, SHAPE-seq, Structure-seq, DMS-seq, PARS), no tool has been developed to date to enable the rapid analysis and interpretation of these data. 
 
 The RNA Structure Framework is a modular toolkit developed to deal with RNA structure probing high-throughput data, from reads mapping to structure inference.  
