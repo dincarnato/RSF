@@ -3,7 +3,6 @@ package Term::Utils;
 use strict;
 use Core::Mathematics;
 use Core::Utils;
-use File::Which;
 
 use base qw(Exporter);
 
