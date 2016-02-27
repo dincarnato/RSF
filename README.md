@@ -1,4 +1,4 @@
-# RME
+# RSF - RNA Structure Framework (v1.0.0a)
 
 The recent advent of high-throughput methods for probing RNA secondary structures has enabled for the transcriptome-wide analysis of the RNA structurome. Despite the establishment of several methods for querying RNA secondary structures on a genome-wide scale (CIRS-seq, SHAPE-seq, Structure-seq, PARS), no tool has been developed to date to enable the rapid analysis and interpretation of these data. 
 
@@ -13,6 +13,13 @@ For updates, please visit: https://rsf.hugef-research.org
 For support, post your questions to: https://groups.google.com/forum/#!forum/rsftoolkit
 
 
+## Author
+
+Danny Incarnato (danny.incarnato[at]hugef-torino.org)
+Epigenetics Unit @ HuGeF [Human Genetics Foundation]
+Group leader: Prof. Salvatore Oliviero (salvatore.oliviero[at]hugef-torino.org
+
+
 ## Citation
 
 Incarnato *et al*., (2015) RNA structure framework: automated transcriptome-wide reconstruction of RNA secondary structures from high-throughput structure probing data.
@@ -20,7 +27,9 @@ Incarnato *et al*., (2015) RNA structure framework: automated transcriptome-wide
 
 ## License
 
-RSF is released under GPLv3 license.
+This program is free software, and can be redistribute and/or modified under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or any later version.
+
+Please see http://www.gnu.org/licenses/ for more informations.
 
 
 ## Prerequisites
