@@ -1,6 +1,6 @@
 # RSF - RNA Structure Framework (v1.0.0a)
 
-The recent advent of high-throughput methods for probing RNA secondary structures has enabled for the transcriptome-wide analysis of the RNA structurome. Despite the establishment of several methods for querying RNA secondary structures on a genome-wide scale (CIRS-seq, SHAPE-seq, Structure-seq, PARS), no tool has been developed to date to enable the rapid analysis and interpretation of these data. 
+The recent advent of high-throughput methods for probing RNA secondary structures has enabled for the transcriptome-wide analysis of the RNA structurome. Despite the establishment of several methods for querying RNA secondary structures on a genome-wide scale (CIRS-seq, SHAPE-seq, Structure-seq, DMS-seq, PARS), no tool has been developed to date to enable the rapid analysis and interpretation of these data. 
 
 The RNA Structure Framework is a modular toolkit developed to deal with RNA structure probing high-throughput data, from reads mapping to structure inference. Its main features are: 
 
@@ -9,14 +9,14 @@ The RNA Structure Framework is a modular toolkit developed to deal with RNA stru
 - Scoring and data normalization
 - Accurate RNA folding prediction by incorporating structural probing data
 
-For updates, please visit: https://rsf.hugef-research.org
+For updates, please visit: https://rsf.hugef-research.org  
 For support, post your questions to: https://groups.google.com/forum/#!forum/rsftoolkit
 
 
 ## Author
 
-Danny Incarnato (danny.incarnato[at]hugef-torino.org)
-Epigenetics Unit @ HuGeF [Human Genetics Foundation]
+Danny Incarnato (danny.incarnato[at]hugef-torino.org)  
+Epigenetics Unit @ HuGeF [Human Genetics Foundation]  
 Group leader: Prof. Salvatore Oliviero (salvatore.oliviero[at]hugef-torino.org
 
 
@@ -44,10 +44,10 @@ Please see http://www.gnu.org/licenses/ for more informations.
 - Perl v5.12 (or greater), with ithreads support
 - Perl non-CORE modules (http://search.cpan.org/):
 
-    ¥ DBI
-    ¥ LWP::UserAgent
-    ¥ RNA (part of the ViennaRNA package)
-    ¥ XML::Simple
+    1. DBI  
+    2. LWP::UserAgent  
+    3. RNA (part of the ViennaRNA package)  
+    4. XML::Simple  
 
 
 ## Installation
@@ -64,5 +64,5 @@ export PATH=$PATH:/path/to/RSF
 
 ## Usage
 
-Please refer to the RSF Manual.
+Please refer to the RSF Manual.  
 To obtain parameters list, simply call the required program with the "-h" (or "--help") parameter.
