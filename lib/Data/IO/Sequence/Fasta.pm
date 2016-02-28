@@ -125,11 +125,11 @@ sub write {
             
         }
     
-        my ($fh, $id, $sequence);
+        my ($fh, $id, $seq);
         $fh = $self->{_fh};
-        $sequence = $sequence->sequence();
+        $seq = $sequence->sequence();
     
-        if (!defined $sequence) {
+        if (!defined $seq) {
             
             $self->warn("Empty Data::Sequence object");
             
@@ -163,7 +163,7 @@ sub write {
         $sequence =~ s/(\w{60})/$1\n/g;
     
         print $fh ">" . $id . "\n" .
-                  $sequence . "\n\n";
+                  $seq . "\n\n";
         
     }
     

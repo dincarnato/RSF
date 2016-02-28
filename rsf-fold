@@ -33,6 +33,8 @@ use lib $Bin . "/lib";
 use Core::Mathematics qw(:all);
 use Core::Statistics;
 use Core::Utils;
+use Data::IO::Sequence;
+use Data::Sequence;
 use Data::Sequence::Utils;
 use RNA::Utils;
 use Term::Constants qw(:screen);
@@ -48,8 +50,8 @@ my ($output, $ct, $input, $method,
     $viennarna, $data, $slope, $intercept,
     $maxdist, $constmethod, $constconversion, $beta,
     $modslope, $modintercept, $installed, $queue,
-    $overwrite, $error, $help, @spd,
-    @pool, %modules);
+    $overwrite, $error, $help, $tmpdir,
+    @spd, @pool, %modules);
 
 $output = "structurome";
 $method = 1;
@@ -61,13 +63,15 @@ $intercept = -0.6;
 $constmethod = 1;
 $constconversion = 1;
 $beta = 0.5;
+$maxdist = 0;
 
 my %results : shared;
 %results = ( folded   => 0,
              parseerr => 0,
              consterr => 0,
              folderr  => 0,
-             db2cterr => 0 );
+             db2cterr => 0,
+             fastaerr => 0 );
 
 do {
     
@@ -107,6 +111,7 @@ $viennarna = which("RNAfold") if (!defined $viennarna);
 $rnastructure = which("Fold") if (!defined $rnastructure);
 $data = $ENV{DATAPATH} if (!defined $data);
 $output =~ s/\/?$/\// if (defined $output);
+$tmpdir = $output . "tmp/";
 $installed = ExtUtils::Installed->new();
 %modules = map {$_ => 1} $installed->modules();
 
@@ -200,8 +205,8 @@ if (-e $output) {
 
 mkpath($output . "structures", { mode  => 0755,
                                  error => \$error });
-mkpath($output . "tmp", { mode  => 0755,
-                          error => \$error });
+mkpath($tmpdir, { mode  => 0755,
+                  error => \$error });
 mkpath($output . "images", { mode  => 0755,
                              error => \$error }) if ($img); 
     
@@ -249,14 +254,15 @@ print "\n[+] Folding statistics:\n" .
       "\n  [*] Discarded transcripts: " . (@spd - $results{folded}) . " total" .
       "\n                             " . $results{parseerr} . " SPD parsing failed" .
       "\n                             " . $results{consterr} . " constraint file generation failed" .
+      "\n                             " . $results{fastaerr} . " FASTA file generation failed" .
       "\n                             " . $results{folderr} . " folding failed" .
       "\n                             " . $ioerr . " I/O error";
       
 print "\n                             " . $results{db2cterr} . " dot-bracket to CT conversion failed" if ($ct);
 
-rmtree($output . "tmp", { safe      => 1,
-                          keep_root => 0,
-                          error     => \$error });
+rmtree($tmpdir, { safe      => 1,
+                  keep_root => 0,
+                  error     => \$error });
 
 print "\n\n[+] All done.\n\n";
 
@@ -285,13 +291,13 @@ sub fold { # Threads
         }
         
         $spdref->{transcript}->{sequence} =~ s/\s+?//g;
+        $spdref->{transcript}->{reactivity} =~ s/\s+?//g;
         $id = $spdref->{transcript}->{id};
         $sequence = dna2rna($spdref->{transcript}->{sequence});
-        $tmp = $output . "tmp/" . $id . "_" . threads->tid();
+        @reactivity = split(/,/, $spdref->{transcript}->{reactivity});
+        $tmp = $tmpdir . $id . "_" . threads->tid();
         
-        $ret = system($Bin . "/spd2shape '" . $spd . "' > '" . $tmp . ".shape'"); # Generates the SHAPE constraint file
-        
-        if ($ret) {
+        if (spd2shape($tmp, \@reactivity)) { # Generates temporary SHAPE constraint file
             
             lock(%results);
             $results{consterr}++;
@@ -300,11 +306,14 @@ sub fold { # Threads
             
         }
         
-        # Generates temporary sequence file
-        open(my $wh, ">" . $tmp . ".fa") or next;
-        select((select($wh), $|=1)[0]);
-        print $wh ">sequence\n" . $sequence . "\n";
-        close($wh);
+        if (seq2fasta($tmp, $id, $sequence)) { # Generates temporary fasta file
+            
+            lock(%results);
+            $results{fastaerr}++;
+            
+            next;
+            
+        }
        
         if ($method == 1) { # ViennaRNA
         
@@ -343,6 +352,8 @@ sub fold { # Threads
                 lock(%results);
                 $results{folderr}++;
                 
+                unlink(glob($tmp . "*"));
+                
                 next;
                 
             }
@@ -368,6 +379,8 @@ sub fold { # Threads
                     lock(%results);
                     $results{db2cterr}++;
                     
+                    unlink(glob($tmp . "*"));
+                    
                     next;
                     
                 }
@@ -389,6 +402,8 @@ sub fold { # Threads
             lock(%results);
             $results{folderr}++;
             
+            unlink(glob($tmp . "*"));
+            
             next;
             
         }
@@ -407,9 +422,56 @@ sub fold { # Threads
         
         }
         
-         unlink(glob($tmp . "*"));
+        unlink(glob($tmp . "*"));
         
     }
+    
+}
+
+sub spd2shape {
+    
+    my ($file, $reactivity) = @_;
+    
+    my $i = 0;
+    
+    open(my $wh, ">", $file . ".shape") or return(1);
+    select((select($wh), $|=1)[0]);
+    for (@{$reactivity}) {
+        
+        $i++;
+        
+        next if (isnan($_));
+        
+        print $wh $i . " " . $_ . "\n";
+        
+    }
+    close($wh);
+    
+    return;
+    
+}
+
+sub seq2fasta {
+    
+    my ($file, $id, $sequence) = @_;
+    
+    eval {
+        
+        my ($io, $fasta);
+        $io = Data::IO::Sequence->new( file   => $file . ".fa",
+                                       mode   => "w",
+                                       flush  => 1,
+                                       format => "fasta" );
+        $fasta = Data::Sequence->new( id       => $id,
+                                      sequence => $sequence );
+        
+        $io->write($fasta);
+        
+    };
+    
+    if ($@) { return(1); }
+    
+    return;
     
 }
 
