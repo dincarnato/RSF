@@ -163,7 +163,7 @@ sub write {
         $sequence =~ s/(\w{60})/$1\n/g;
     
         print $fh ">" . $id . "\n" .
-                  $seq . "\n\n";
+                  $seq . "\n";
         
     }
     

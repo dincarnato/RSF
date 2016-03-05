@@ -151,11 +151,11 @@ else {
     
     my $ret = `$samtools 2>&1`;
     
-    if ($ret =~ m/Version: (.+)$/) {
+    if ($ret =~ m/Version: (.+)$/m) {
         
         my $version = $1;
         
-        die "\n  [!] Error: RT-Counter requires SAMTools v1 or greater (Detected: v" . $version . ")\n\n" if (substr($version, 0, 1) < 1);
+        die "\n  [!] Error: RT Count requires SAMTools v1 or greater (Detected: v" . $version . ")\n\n" if (substr($version, 0, 1) < 1);
         
     }
     else { warn "\n  [!] Warning: Unable to detect SAMTools version\n"; }

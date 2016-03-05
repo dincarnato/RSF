@@ -23,7 +23,7 @@ use Data::Sequence::Utils;
 
 use base qw(Exporter);
 
-our @EXPORT = qw(isdotbracket isdbbalanced rnapair ct2db
+our @EXPORT = qw(isdotbracket isdbbalanced fixdotbracket rnapair ct2db
                  db2ct listpairs ppv sensitivity bpdistance);
 
 sub isdotbracket { return(is($_[0], $_[1] . quotemeta("()."))); }
@@ -57,6 +57,33 @@ sub isdbbalanced {
     return() if ($dotbracket !~ m/^\.+?$/);
     
     return(1);
+    
+}
+
+sub fixdotbracket {
+    
+    my $dotbracket = shift;
+    
+    return() if (!isdotbracket($dotbracket));
+    
+    my ($i, @dotbracket);
+    $i = 0;
+    @dotbracket = split(//, $dotbracket);
+    
+    while ($dotbracket =~ m/(\(\.+?\))/) {
+    
+        my ($match, $dots);
+        $match = $1;
+        $i = index($dotbracket, $match, 0);
+        $dots = "." x length($match);
+        $match = quotemeta($match);
+        $dotbracket =~ s/^(.{$i})$match/$1 . $dots/e;
+        
+    }
+    
+    $dotbracket[$-[0]] = "." while($dotbracket =~ m/[\(\)]/g);
+    
+    return(join("", @dotbracket));
     
 }
 
