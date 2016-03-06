@@ -36,7 +36,7 @@ my ($dbh, $sth, $assembly, $annotation,
     $reference, $output, $bb, $bt,
     $prefix, $timeout, $help, $ret,
     $overwrite, $error, $name, @columns,
-    %columns, %chromosomes);
+    %columns, %chromosomes, %ids);
 
 $timeout = 180;
 $assembly = "mm9";
@@ -207,6 +207,8 @@ else {
     select((select($wh), $|=1)[0]);
 
     while (my $ref = $sth->fetchrow_hashref()) {
+        
+        next if (exists $ids{$ref->{name}});
 
         my (@starts, @ends, @length);
         @starts = split(/,/, $ref->{exonStarts});
@@ -224,6 +226,7 @@ else {
                   "\t" .  join(",", @length) . ",\t" . join(",", @starts) . ",\n";
         
         $chromosomes{$ref->{chrom}} = 1;
+        $ids{$ref->{name}} = 1;
 
     }
     

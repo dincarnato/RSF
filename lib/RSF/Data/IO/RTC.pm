@@ -145,8 +145,8 @@ sub read {
     my $seqid = shift if (@_);
     
     my ($fh, $data, $idlen, $id,
-        $length, $sequence, $entry, @stops,
-        @coverage);
+        $length, $sequence, $entry, $eightbytes,
+        @stops, @coverage);
     
     $self->throw("Filehandle isn't in read mode") unless ($self->mode() eq "r");
     
@@ -166,8 +166,12 @@ sub read {
         else { return; }
         
     }
+    
+    # Checks whether RTCEOF marker has been reached
+    read($fh, $eightbytes, 8);
+    seek($fh, tell($fh) - 8, SEEK_SET);
         
-    if (eof($fh)) {
+    if ($eightbytes eq "\x5b\x65\x6f\x66\x72\x74\x63\x5d") {
     
         $self->reset() if ($self->{autoreset});
     
