@@ -226,6 +226,8 @@ if ($method == 1) { # ViennaRNA
     else { $foldparams = "--shapeMethod=Dm" . $slope . "b" . $intercept; }  # Deigan et al., 2009 (ViennaRNA 'D')
     
     $foldparams .= " --maxBPspan=" . $maxdist if ($maxdist);
+    $foldparams .= " --noLP" if ($nlp);
+    $foldparams .= " --noClosingGU" if ($ngu);
 
 }
 elsif ($method == 2) { # RNAstructure
