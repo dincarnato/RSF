@@ -224,7 +224,6 @@ sub combine {
             @reactivity = split(/,/, $spdref->{transcript}->{reactivity});
             
             push(@{$profile[$-[0]]}, $reactivity[$-[0]]) while($sequence =~ m/[$spdref->{reactive}]/g);
-            push(@{$profile[$-[0]]}, "NaN") while (@{$profile[$-[0]]} < length($sequence));
             
         }
         
@@ -256,6 +255,9 @@ sub combine {
             }
             
         }
+        
+        push(@mean, "NaN") while (@mean < length($sequence));
+        push(@stdev, "NaN") while (@stdev < length($sequence));
         
         $reactive = join("", sort(uniq(split(//, $reactive))));
         

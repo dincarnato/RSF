@@ -26,6 +26,7 @@ use FindBin qw($Bin);
 use Fcntl qw(SEEK_END);
 use Getopt::Long qw(:config no_ignore_case);
 use threads;
+use threads::shared;
 use Thread::Queue;
 
 use lib $Bin . "/lib";
@@ -54,6 +55,8 @@ my ($tmp, $tmpdir, $output, $keep,
     $processmanager, $madetmp, $qcounter, $qresults,
     $table, @bam_trim5, @tmp, @pool,
     %transcripts, %bases, %spacer);
+
+my $lock : shared;
 
 $tmp = int(rand(time())) + int(rand(time()));
 $tmpdir = "/tmp/";
@@ -606,7 +609,8 @@ sub count {
         my ($lastid, $covered, @stops, @coverage);
         $covered = 0;
         
-        print "\n  [-] Processing sample \"" . $sample->{file} . "\"" . (" " x $spacer{$sample->{file}}) . "(Thread #" . threads->tid . ")...";
+        { lock($lock);
+          print "\n  [-] Processing sample \"" . $sample->{file} . "\"" . (" " x $spacer{$sample->{file}}) . "(Thread #" . threads->tid . ")..."; }
         
         copy($tmpdir . $tmp . "_base.rtc", $output . "counts/" . $sample->{file} . ".rtc") or $qresults->enqueue("\n  [!] Error: Unable to copy counts table structure for sample \"" .
                                                                                                                  $sample->{file} . "\" (" . $! . ")") and next;
