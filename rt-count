@@ -219,7 +219,7 @@ foreach my $sample (uniq(@ARGV)) {
     
     die "  [!] Error: Specified sample \"" . $sample . "\" file doesn't exist\n\n" if (!-e $sample);
 
-    my ($file, $path, $extension) = fileparse($sample, qr/\.[^.]*/);
+    my $file = (fileparse($sample, qr/\.[^.]*/))[0];
     
     push(@tmp, { path  => $sample,
                  file  => $file,

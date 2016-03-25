@@ -43,9 +43,13 @@ sub new {
                    circular    => 0,
                    references  => [] }, \%parameters);
     
-    $self->_validate();
-    $self->_fixcase();
-    $self->_fixproperties() if (defined $self->{sequence});
+    if ($class =~ m/^Data::Sequence::\w+$/) { return($self); }
+    else {
+    
+        $self->_validate();
+        $self->_fixproperties();
+        
+    }
     
     return($self);
     
@@ -62,7 +66,7 @@ sub _validate {
     
 }
 
-sub _fixcase {
+sub _fixproperties {
     
     my $self = shift;
     
@@ -71,30 +75,24 @@ sub _fixcase {
     
     $self->{sequence} = uc($self->{sequence}) if ($self->{type} eq "AA");
     
-}
-
-sub _fixproperties {
-    
-    my $self = shift;
-    
-    my ($type);
-    
-    if (isdna($self->{sequence}, "-")) { $type = "DNA"; }
-    elsif (isrna($self->{sequence}, "-")) { $type = "RNA"; }
-    else { $type = "AA"; }
-         
-    $self->{type} = $type;
-    
-    if ($type eq "AA") {
+    if (defined $self->{sequence}) {
         
-        $self->{orientation} =~ tr/53/NC/ if (defined $self->{orientation});
-        $self->{orientation} = "N" unless ($self->{orientation} =~ m/^[NC]$/);
+        if (isdna($self->{sequence}, "-")) { $self->{type} = "DNA"; }
+        elsif (isrna($self->{sequence}, "-")) { $self->{type} = "RNA"; }
+        else { $self->{type} = "AA"; }
         
-    }
-    else {
-        
-        $self->{orientation} =~ tr/NC/53/ if (defined $self->{orientation});
-        $self->{orientation} = "5" unless ($self->{orientation} =~ m/^[53]$/);
+        if ($self->{type} eq "AA") {
+            
+            $self->{orientation} =~ tr/53/NC/ if (defined $self->{orientation});
+            $self->{orientation} = "N" unless ($self->{orientation} =~ m/^[NC]$/);
+            
+        }
+        else {
+            
+            $self->{orientation} =~ tr/NC/53/ if (defined $self->{orientation});
+            $self->{orientation} = "5" unless ($self->{orientation} =~ m/^[53]$/);
+            
+        }
         
     }
     

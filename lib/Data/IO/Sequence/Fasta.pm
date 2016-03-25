@@ -55,6 +55,10 @@ sub read {
         
         if (!defined $header) {
             
+            # First seq header must start with >
+            next if (@{$self->{_prev}} == 1 &&
+                     $line !~ m/^>/);
+            
             $header = $line;
             $header =~ s/^>//;
             $header = striptags($header);

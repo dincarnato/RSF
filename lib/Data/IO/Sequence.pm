@@ -19,6 +19,7 @@ package Data::IO::Sequence;
 use strict;
 use Core::Utils;
 use Data::Sequence::Utils;
+use RNA::Utils;
 
 use base qw(Data::IO);
 
@@ -70,12 +71,7 @@ sub _loadformat {
     
     my $self = shift;
     
-    if ($self->{format} eq "AUTO") {
-    
-        if ($self->{file} =~ m/\.(fa|nt|aa|faa|fna|fas|fsa|seq|fast|fasta)$/i) { $self->{format} = "Fasta"; }
-        else { $self->{format} = $self->_findformat(); }
-    
-    }
+    if ($self->{format} eq "AUTO") { $self->{format} = $self->_findformat(); }
     else { $self->_fixformat(); }
     
     $self->loadpackage(ref($self) . "::" . $self->{format});
@@ -95,11 +91,19 @@ sub _findformat {
         
         chomp($line);
         
-        if ($fastalike) { $format = "Fasta" if (isseq($line)); }
+        if ($fastalike) {
+            
+            # In case is Vienna format and free energy is appended to structure
+            $line =~ s/\s*\([\+-]?\d+\.\d+\)$//;
+            
+            $format = "Fasta" if (isseq($line) &&
+                                  !defined $format);
+            $format = "Vienna" if (isdotbracket($line));
+            
+        }
         else { $fastalike = 1 if ($line =~ m/^>/); }
         
-        last if ($format ||
-                 $index > 10);
+        last if ($index > 100); # Just parse the first 100 rows to guess format
         
         $index++;
         
