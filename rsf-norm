@@ -561,7 +561,7 @@ sub help {
  
  Scoring method #2 options (Rouskin et al., 2014)
  -nw or --norm-window                Window for signal normalization (>=3, Default: 50)
- -wo or --window-offset              Offset for sliding window during normalization (Default: 0)
+ -wo or --window-offset              Offset for sliding window during normalization (Default: 50)
  
 HELP
     
