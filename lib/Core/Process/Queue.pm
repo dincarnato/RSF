@@ -19,7 +19,7 @@ sub new {
                    onstart    => sub {},
                    onexit     => sub {},
                    _children  => 0,
-                   _processes => [],
+                   _processes => {},
                    _queue     => [] }, \%parameters);
     
     $self->_validate();
@@ -78,7 +78,8 @@ sub start {
 
         if ($self->{_children} == $processors) {
         
-            my $pid = wait(); 
+            my $pid = wait();
+            $self->{_processes}->{$pid}->closepair();
             $self->{_children}--;
             
         } 
@@ -90,7 +91,7 @@ sub start {
                                           onexit  => $self->{onexit} ); 
         $process->start($parameters->{command}, @{$parameters->{arguments}});
         
-        push(@{$self->{_processes}}, $process);
+        $self->{_processes}->{$process->pid()} = $process;
         
         $self->{_children}++;
       
@@ -102,9 +103,9 @@ sub waitall {
     
     my $self = shift;
     
-    $self->throw("No running process") unless(@{$self->{_processes}});
+    $self->throw("No running process") unless(values %{$self->{_processes}});
     
-    $_->wait() for (@{$self->{_processes}});
+    $_->wait() for (values %{$self->{_processes}});
     
     $self->{_children} = 0;
     
@@ -114,7 +115,17 @@ sub dequeue {
     
     my $self = shift;
     
-    return(shift(@{$self->{_processes}})) if (@{$self->{_processes}});
+    if (values %{$self->{_processes}}) {
+    
+        my ($process, $pid);
+        $pid = (keys %{$self->{_processes}})[0]; 
+        $process = $self->{_processes}->{$pid};
+        
+        delete($self->{_processes}->{$pid});
+        
+        return($process);
+        
+    }
     
 }
 

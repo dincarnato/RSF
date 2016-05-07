@@ -12,14 +12,15 @@ sub new {
     my %parameters = @_ if (@_);
     
     my $self = $class->SUPER::new(%parameters);
-    $self->_init({ detached => 0,
-                   id       => randalphanum(0xf), # Random generated alphanumeric ID if not specified
-                   stdout   => undef,
-                   stderr   => undef,
-                   onstart  => sub {},
-                   onexit   => sub {},
-                   _pid     => undef,
-                   _child   => undef }, \%parameters);
+    $self->_init({ detached  => 0,
+                   id        => randalphanum(0xf), # Random generated alphanumeric ID if not specified
+                   stdout    => undef,
+                   stderr    => undef,
+                   onstart   => sub {},
+                   onexit    => sub {},
+                   _pid      => undef,
+                   _child    => undef,
+                   _exitcode => undef }, \%parameters);
     
     $self->_validate();
     
@@ -101,20 +102,6 @@ sub start {
     
 }
 
-sub exitcode {
-    
-    my $self = shift;
-    
-    my ($child, $exitcode);
-    $child = $self->{_child};
-    
-    chomp($exitcode = <$child>);
-    close($child);
-    
-    return($exitcode);
-    
-}
-
 sub tee {
 
     my $self = shift;
@@ -127,6 +114,22 @@ sub id { return($_[0]->{id}); }
 
 sub pid { return($_[0]->{_pid}); }
 
+sub closepair {
+    
+    my $self = shift;
+    
+    my ($child, $exitcode);
+    $child = $self->{_child};
+    
+    chomp($exitcode = <$child>);
+    close($child);
+    
+    $self->{_exitcode} = $exitcode;
+        
+}
+
+sub exitcode { return($_[0]->{_exitcode}); }
+
 sub wait {
   
     my $self = shift;
@@ -136,7 +139,7 @@ sub wait {
     local $SIG{CHLD} = "IGNORE";
 
     waitpid($self->{_pid}, 0);
-
+    
 }
 
 sub onstart {
