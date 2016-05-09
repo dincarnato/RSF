@@ -44,7 +44,7 @@ sub pearson {
     for (@data) { Core::Utils::throw("Values must be provided as ARRAY references") if (ref($_) ne "ARRAY"); }
     
     Core::Utils::throw("Insufficient parameters") if (@data < 2);
-    Core::Utils::throw("Spearman correlation calculation needs 2 ARRAY references of the same length") if (@{$data[0]} != @{$data[1]});
+    Core::Utils::throw("Pearson correlation calculation needs 2 ARRAY references of the same length") if (@{$data[0]} != @{$data[1]});
     Core::Utils::throw("Values ARRAY references are empty") if (@{$data[0]} <= 1);
     
     $size = scalar(@{$data[0]});
@@ -52,6 +52,16 @@ sub pearson {
     $avgy = average(@{$data[1]});
     $stdevx = stdev(@{$data[0]});
     $stdevy = stdev(@{$data[1]});
+
+    if (!$stdevx ||
+	!$stdevy) { 
+
+	Core::Utils::warn("Standard deviation is 0");
+
+	return(nan, 1); 
+
+    }
+
     $n += (($data[0]->[$_] - $avgx) * ($data[1]->[$_] - $avgy)) for (0 .. $size - 1);
     $r = $n / ($size * $stdevx * $stdevy);
     $p = _pcorr($r, $size);
@@ -73,6 +83,15 @@ sub spearman {
     Core::Utils::throw("Insufficient parameters") if (@data < 2);
     Core::Utils::throw("Spearman correlation calculation needs 2 ARRAY references of the same length") if (@{$data[0]} != @{$data[1]});
     Core::Utils::throw("Values ARRAY references are empty") if (@{$data[0]} <= 1);
+
+    if (!stdev(@{$data[0]}) ||
+       	!stdev(@{$data[1]})) {
+
+        Core::Utils::warn("Standard deviation is 0");
+
+        return(nan, 1);
+
+    }
 
     @rank1 = _values2ranks(@{$data[0]});
     @rank2 = _values2ranks(@{$data[1]});

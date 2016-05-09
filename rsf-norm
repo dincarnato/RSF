@@ -432,7 +432,7 @@ sub winsor_90 {  # 90% Winsorising
     
     my $percentile = percentile(\@reactivity, 0.95); # 95th percentile
     
-    return() if ($percentile == 0);
+    return() unless($percentile);
     
     for (@reactivity) {
         
@@ -455,6 +455,8 @@ sub norm_28 {  # 2-8% Normalization
     $p2 = round(@reactivity * 0.02);
     $p8 = round(@reactivity * 0.08);
     
+    return() unless($p8);
+
     @norm = sort {$b <=> $a} @reactivity;
     
     $avg += $norm[$_] for ($p2 .. ($p2 + $p8));
@@ -483,6 +485,8 @@ sub boxplot {
     for (@norm) { shift(@norm) if ($_ >= $max); }
     
     $p10 = round(@norm * 0.1);
+
+    return unless($p10);
     
     $avg += $norm[$_] for (0 .. $p10);
     $avg /= $p10;
