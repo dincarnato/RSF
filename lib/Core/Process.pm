@@ -114,7 +114,7 @@ sub id { return($_[0]->{id}); }
 
 sub pid { return($_[0]->{_pid}); }
 
-sub closepair {
+sub _closepair {
     
     my $self = shift;
     
@@ -139,6 +139,8 @@ sub wait {
     local $SIG{CHLD} = "IGNORE";
 
     waitpid($self->{_pid}, 0);
+    
+    $self->_closepair();
     
 }
 
@@ -171,5 +173,7 @@ sub onexit {
     }
     
 }
+
+sub DESTROY { close($_[0]->{_child}); }
 
 1;

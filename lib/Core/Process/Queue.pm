@@ -32,7 +32,7 @@ sub _validate {
     
     my $self = shift;
     
-    $self->throw("Processors number must be a positive integer >= 1") if (!isint($self->{processors}) ||
+    $self->throw("Number of processors must be a positive integer >= 1") if (!isint($self->{processors}) ||
                                                                           $self->{processors} < 1);
     $self->throw("On start parameter value must be a CODE reference") if (ref($self->{onstart}) ne "CODE");
     $self->throw("On exit parameter value must be a CODE reference") if (ref($self->{onexit}) ne "CODE");
@@ -79,7 +79,7 @@ sub start {
         if ($self->{_children} == $processors) {
         
             my $pid = wait();
-            $self->{_processes}->{$pid}->closepair();
+            $self->{_processes}->{$pid}->_closepair(); # Socket pair on parent's side needs to be closed once child exits
             $self->{_children}--;
             
         } 
