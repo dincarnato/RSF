@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 ##
-# RSF Combine (v1.0.0a)
+# RSF Combine (v1.1.0)
 # Epigenetics Unit @ HuGeF [Human Genetics Foundation]
 #
 # Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
@@ -49,11 +49,13 @@ $decimals = 3;
 $threads = 1;
 
 my %results : shared;
-%results = ( diffseq   => 0,
-             diffscore => 0,
-             diffnorm  => 0,
-             failed    => 0,
-             combined  => 0 );
+%results = ( diffseq    => 0,
+             diffscore  => 0,
+             diffnorm   => 0,
+             diffoffset => 0,
+             diffwin    => 0,
+             failed     => 0,
+             combined   => 0 );
 
 do {
     
@@ -171,7 +173,7 @@ sub combine {
         
         my ($spdref, $sequence, $scoring, $reactive,
             $norm, $spd, $mean, $std, $attributes,
-            @profile, @mean, @stdev);
+            $offset, $win, @profile, @mean, @stdev);
         
         for (@spd) {
             
@@ -187,6 +189,8 @@ sub combine {
                 $sequence = $spdref->{transcript}->{sequence} if (!defined $sequence);
                 $scoring = $spdref->{scoring} if (!defined $scoring);
                 $norm = $spdref->{norm} if (!defined $norm);
+                $win = $spdref->{win} if (!defined $win);
+                $offset = $spdref->{offset} if (!defined $offset);
                 $reactive .= $spdref->{reactive};
                 
                 if ($sequence ne $spdref->{transcript}->{sequence}) {
@@ -211,6 +215,24 @@ sub combine {
                     
                     lock(%results);
                     $results{diffnorm}++;
+                    
+                    die;
+                    
+                }
+                
+                if ($win ne $spdref->{win}) {
+                    
+                    lock(%results);
+                    $results{diffwin}++;
+                    
+                    die;
+                    
+                }
+                
+                if ($offset ne $spdref->{offset}) {
+                    
+                    lock(%results);
+                    $results{diffoffset}++;
                     
                     die;
                     
@@ -274,7 +296,9 @@ sub combine {
         $attributes = { combined => "TRUE",
                         reactive => $reactive,
                         scoring  => $scoring,
-                        norm     => $norm };
+                        norm     => $norm,
+                        win      => $win,
+                        offset   => $offset };
         
         $spd = Data::IO::XML->new( file      => $output . $id . ".spd",  
                                    mode      => "w",
@@ -316,7 +340,7 @@ sub help {
     
     die <<HELP;
  
- RSF Combine (v1.0.0a)
+ RSF Combine (v1.1.0)
  Epigenetics Units @ HuGeF [Human Genetics Foundation]
  Group leader: Prof. Salvatore Oliviero
     
