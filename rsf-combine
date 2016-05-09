@@ -161,7 +161,9 @@ print "\n[+] Combination statistics:\n" .
       "\n                             " . ($results{failed} - $results{diffseq} - $results{diffscore} - $results{diffnorm}) . " SPD parsing failed" .
       "\n                             " . $results{diffseq} . " mismatch between transcript sequences" .
       "\n                             " . $results{diffscore} . " mismatch between scoring methods" .
-      "\n                             " . $results{diffnorm} . " mismatch between normalization methods";
+      "\n                             " . $results{diffnorm} . " mismatch between normalization methods" .
+      "\n                             " . $results{diffwin} . " mismatch between window sizes" .
+      "\n                             " . $results{diffoffset} . " mismatch between window offsets";
 
 print "\n\n[+] All done.\n\n";
 
