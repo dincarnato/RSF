@@ -174,6 +174,12 @@ sub onexit {
     
 }
 
-sub DESTROY { close($_[0]->{_child}); }
+sub DESTROY {
+    
+    local $SIG{__DIE__};
+    
+    close($_[0]->{_child});
+    
+}
 
 1;
