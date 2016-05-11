@@ -130,8 +130,8 @@ die "\n  [!] Error: Bowtie mismatches value must be an integer comprised between
                                                                                                    $bv !~ m/^[0-3]$/) ||
                                                                                                   (defined $bn &&
                                                                                                    $bn !~ m/^[0-3]$/));
-die "\n  [!] Error: Bowtie threads value must be an integer greater than 0\n\n" if (!isint($bp) ||
-                                                                                    $bp < 1);
+die "\n  [!] Error: Bowtie threads number must be an integer greater than 0\n\n" if (!isint($bp) ||
+                                                                                     $bp < 1);
 die "\n  [!] Error: No adapter's sequence provided\n\n"if (!defined $fa);
 die "\n  [!] Error: Invalid adapter's sequence\n\n" if (!isdna($fa));
 die "\n  [!] Error: No FastQ quality scale provided\n\n" if (!defined $fq);
@@ -790,7 +790,7 @@ sub help {
     
     die <<HELP;
  
- RT Count (v1.0.0a)
+ RT Count (v1.1.0)
  Epigenetics Units @ HuGeF [Human Genetics Foundation]
  Group leader: Prof. Salvatore Oliviero
     
@@ -826,7 +826,7 @@ sub help {
  FASTX Clipper options
  -fa or --fastx-adapter              Sequence of 3' adapter for clipping (Default: TGGAATTCTCGGGTGCCAAGG)
  -fq or --fastx-qual                 FastQ files quality scale (33 [Default], or 64)
- -fl or --fastx-len                  Minimum length to keep reads after clipping (>=35, Default: 35)
+ -fl or --fastx-len                  Minimum length to keep reads after clipping (>=25, Default: 25)
  -c  or --clipped                    Assumes that the provided FastQ files have been already clipped
  
  Bowtie options

@@ -167,4 +167,19 @@ sub tee {
 
 }
 
+sub processors {
+    
+    my $self = shift;
+    my $processors = shift if (@_);
+    
+    $self->throw("Number of processors must be an integer >= 1") if (defined $processors &&
+                                                                     (!isint($processors) ||
+                                                                      $processors < 1));
+    
+    $self->{processors} = $processors if ($processors);
+    
+    return($self->{processors});
+    
+}
+
 1;
