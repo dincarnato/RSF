@@ -51,11 +51,11 @@ sub enqueue {
     $self->throw("Command arguments must be an ARRAY reference") if (exists $parameters{arguments} &&
                                                                      ref($parameters{arguments}) ne "ARRAY");
     
-    my $parameters = checkparameters({ command => undef,
+    my $parameters = checkparameters({ command   => undef,
                                        arguments => [],
                                        id        => undef,
                                        stderr    => undef,
-                                       stdin     => undef }, \%parameters);
+                                       stdout    => undef }, \%parameters);
     
     push(@{$self->{_queue}}, $parameters);
     
