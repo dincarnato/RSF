@@ -59,13 +59,13 @@ sub _validate {
     $self->throw("normWindow value should be greater than or equal to 3") if ($self->{normwindow} < 3);
     $self->throw("Invalid windowOffset value") if (!isint($self->{windowoffset}) ||
                                                    $self->{windowoffset} < 1);
-    $self->throw("windowOffset value cannot be greater than normWindow size") if ($self->{windowoffset} > $self->{normwindow});
+    $self->throw("windowOffset value cannot exceed than normWindow size") if ($self->{windowoffset} > $self->{normwindow});
     $self->throw("Invalid reactive bases") if ($self->{reactivebases} !~ m/^all$/i &&
                                                !isiupac($self->{reactivebases}));
     $self->throw("normIndependent value must be boolean") if ($self->{normindependent} !~ m/^TRUE|FALSE|yes|no|[01]$/i);
     $self->throw("Invalid pseudoCount value") if (!isint($self->{pseudocount}) ||
                                                   !ispositive($self->{pseudocount}));
-    $self->throw("pseudoCount value should be greater than or equal to 1") if ($self->{pseudocount} < 1);
+    $self->throw("pseudoCount value should be greater than 0") if ($self->{pseudocount} <= 0);
     $self->throw("Invalid maxScore value") if (!ispositive($self->{maxscore}));
     $self->throw("maxScore value should be greater than or equal to 1") if ($self->{maxscore} < 1);
     $self->throw("Invalid meanCoverage value") if (!ispositive($self->{meancoverage}));
@@ -120,13 +120,9 @@ sub summary {
         $table->row("Maximum score", $self->{maxscore});
         
     }
-    else { # Rouskin
         
-        $table->row("Normalization window", $self->{normwindow});
-        $table->row("Window sliding offset", $self->{windowoffset});
-        
-    }
-    
+    $table->row("Normalization window", $self->{normwindow});
+    $table->row("Window sliding offset", $self->{windowoffset});
     $table->row("Reactive bases", $self->{reactivebases});
     $table->row("Normalize each base independently", ($self->{normindependent} ? "Yes" : "No"));
     $table->row("Minimum mean coverage", $self->{meancoverage});
@@ -156,14 +152,10 @@ sub write {
                   "maxScore=" . $self->{maxscore} . "\n";
         
     }
-    else { # Rouskin
-        
-        print $fh "normWindow=" . $self->{normwindow} . "\n" .
-                  "windowOffset=" . $self->{windowoffset} . "\n";
-        
-    }
     
-    print $fh "reactiveBases=" . $self->{reactivebases} . "\n" .
+    print $fh "normWindow=" . $self->{normwindow} . "\n" .
+              "windowOffset=" . $self->{windowoffset} . "\n" .
+              "reactiveBases=" . $self->{reactivebases} . "\n" .
               "normIndependent=" . ($self->{normindependent} ? "yes" : "no") . "\n" .
               "meanCoverage=" . $self->{meancoverage} . "\n" .
               "mediancoverage=" . $self->{mediancoverage} . "\n";
