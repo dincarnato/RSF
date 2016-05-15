@@ -380,7 +380,7 @@ sub norm {
             }
             
         }
-        print "\nsize: " . scalar(@norm) . "\n";
+        
         $reactivity = join(",", map { defined $_ ? sprintf("%." . $decimals . "f", $_) : "NaN" } @norm);
         
         # For nicer formatting
