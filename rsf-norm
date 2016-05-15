@@ -313,20 +313,22 @@ sub norm {
                
             }
             
-            if (!@last) {
-                
-                # @last is always empty when windowoffset == normwindow
-                
-                @norm = (@norm, @winnorm[0 .. $config->windowoffset() - 1]);    # Fills first reactivity window
-                @last = @winnorm[$config->windowoffset() .. $#winnorm];         # Fills remaining window for next cycle
-                
-            }
-            else { # Never get here if windowoffset == normwindow because @last is always empty
-                
-                push(@norm, defined $last[$_] ? mean($last[$_], $winnorm[$_]) : undef) for (0 .. $#last); # Averages previous remaining window with current first window
-                @last = @winnorm[$#last + 1 .. $#winnorm];                                                 # Fills remaining window for next cycle
-    
-            }
+            for (0 .. $#winnorm) { push(@{$norm[$_ + $i]}, $winnorm[$_]); }
+            
+            #if (!@last) {
+            #    
+            #    # @last is always empty when windowoffset == normwindow
+            #    
+            #    @norm = (@norm, @winnorm[0 .. $config->windowoffset() - 1]);    # Fills first reactivity window
+            #    @last = @winnorm[$config->windowoffset() .. $#winnorm];         # Fills remaining window for next cycle
+            #    
+            #}
+            #else { # Never get here if windowoffset == normwindow because @last is always empty
+            #    
+            #    push(@norm, defined $last[$_] ? mean($last[$_], $winnorm[$_]) : undef) for (0 .. $#last); # Averages previous remaining window with current first window
+            #    @last = @winnorm[$#last + 1 .. $#winnorm];                                                 # Fills remaining window for next cycle
+            #
+            #}
 
             $lasti = $i + $config->windowoffset();
         
@@ -352,11 +354,15 @@ sub norm {
                 
             }
             
-            push(@norm, defined $last[$_] ? ($config->windowoffset() < $config->normwindow() ? mean($last[$_], $winnorm[$_]) : $last[$_]) : undef) for (0 .. $#last); # Averages previous remaining window with current first window
+            #push(@norm, defined $last[$_] ? ($config->windowoffset() < $config->normwindow() ? mean($last[$_], $winnorm[$_]) : $last[$_]) : undef) for (0 .. $#last); # Averages previous remaining window with current first window
+            #
+            #@norm = (@norm, @winnorm[$#last + 1 .. $#winnorm]);
             
-            @norm = (@norm, @winnorm[$#last + 1 .. $#winnorm]);
+            for (0 .. $#winnorm) { push(@{$norm[$_ + $lasti]}, $winnorm[$_]); }
             
         }
+        
+        @norm = map { isnumeric(@{$_}) ? mean(@{$_}) : undef } @norm;
         
         { lock(%results);
           $results{cov}++; }
@@ -374,7 +380,7 @@ sub norm {
             }
             
         }
-        
+        print "\nsize: " . scalar(@norm) . "\n";
         $reactivity = join(",", map { defined $_ ? sprintf("%." . $decimals . "f", $_) : "NaN" } @norm);
         
         # For nicer formatting
