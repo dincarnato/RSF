@@ -37,6 +37,7 @@ sub new {
                    autoreset => 0,
                    timeout   => 10,
                    retries   => 3,
+                   overwrite => 0,
                    _prev     => [],
                    _fh       => undef }, \%parameters);
     
@@ -59,8 +60,8 @@ sub _validate {
                                                  !defined $self->{data});
     $self->throw("No output file has been specified") if ($self->{mode} =~ m/^w\+?$/i &&
                                                           !defined $self->{file});
-    $self->throw("Flush parameter's allowed values are 0 or 1") if ($self->{mode} =~ m/^w\+?$/i &&
-                                                                    $self->{flush} !~ m/^[01]$/);
+    $self->throw("Flush parameter's allowed values are 0 or 1") if ($self->{flush} !~ m/^[01]$/);
+    $self->throw("Overwrite parameter's allowed values are 0 or 1") if ($self->{overwrite} !~ m/^[01]$/);
     $self->throw("Timeout parameter must be an integer greater than 0") if (!isint($self->{timeout}) &&
                                                                             $self->{timeout} <= 0);
     $self->throw("Retries parameter must be an integer greater than 0") if (!isint($self->{retries}) &&
@@ -119,26 +120,9 @@ sub _checkfile {
     }
     elsif ($self->{mode} eq "w") {
         
-        if (-e $file) {
-            
-            if (questionyn("Provided file already exists.\nAppend data to file")) { $self->{mode} = "w+"; }
-            else {
-                
-                if (questionyn("Overwrite file", "n")) {
-                    
-                    unlink($file) or $self->throw("Provided file isn't writeable");
-                    
-                    open(my $fh, ">" . $file);
-                    close($fh);
-                    
-                    $self->{mode} = "w+";
-                    
-                }
-                else { $self->throw("Unable to write to output file \"" . $file . "\""); }
-                
-            }
-        
-        }
+        $self->throw("Specified file \"" . $file . "\" already exists.\n" .
+                     "Change IO mode to append, or enable overwrite parameter.") if (-e $file &&
+                                                                                     !$self->{overwrite});
         
     }
     
@@ -185,7 +169,7 @@ sub back {
                                                                       ispositive($index));
     
     #if (ref($self) =~ m/^Data::IO::(?:Track|Sequence)::\w+$/) {
-    if (ref($self) =~ m/Data::IO::\w+$/) {
+    if (ref($self) =~ m/^Data::IO::\w+/) {
         
         splice(@{$self->{_prev}}, (@{$self->{_prev}} - $index), $index);
         

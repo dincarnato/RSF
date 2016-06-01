@@ -3,6 +3,7 @@ package Core::Process;
 use strict;
 use Core::Utils;
 use Socket;
+use POSIX;
 
 use base qw(Core::Base);
 
@@ -12,7 +13,7 @@ sub new {
     my %parameters = @_ if (@_);
     
     my $self = $class->SUPER::new(%parameters);
-    $self->_init({ detached  => 0,
+    $self->_init({ #detached  => 0,
                    id        => randalphanum(0xf), # Random generated alphanumeric ID if not specified
                    stdout    => undef,
                    stderr    => undef,
@@ -32,7 +33,7 @@ sub _validate {
     
     my $self = shift;
     
-    $self->throw("Detached parameter value must be BOOL") if ($self->{detached} !~ m/^[01]$/);
+    #$self->throw("Detached parameter value must be BOOL") if ($self->{detached} !~ m/^[01]$/);
     $self->throw("On start parameter value must be a CODE reference") if (ref($self->{onstart}) ne "CODE");
     $self->throw("On exit parameter value must be a CODE reference") if (ref($self->{onexit}) ne "CODE");
     
@@ -51,15 +52,17 @@ sub start {
         socketpair($child, $parent, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or $self->throw("Unable to create socket pair between parent and child process (" . $! . ")");
         select((select($parent), $|=1)[0]);
         select((select($child), $|=1)[0]);
-    
+
+        #$SIG{CHLD} = sub { while (waitpid(-1, WNOHANG) == 0) {} };
+        
         $self->{_pid} = fork();
         
         $self->throw("Unable to start process") unless (defined $self->{_pid});
-      
-        setsid() if ($self->{detached});
-    
+
+        #setsid() if ($self->{detached});
+        
         if (!$self->{_pid}) {
-            
+           
             $|++;
             
             my ($exitcode);
@@ -82,7 +85,7 @@ sub start {
             
             }
         
-            if (ref($command) eq "CODE") { $exitcode = $command->(@parameters); }
+            if (ref($command) eq "CODE") { $exitcode = $command->(@parameters); } 
             else { $exitcode = system($command, @parameters); }
             
             print $parent $exitcode;
@@ -121,8 +124,12 @@ sub _closepair {
     my ($child, $exitcode);
     $child = $self->{_child};
     
-    chomp($exitcode = <$child>);
-    close($child);
+    if (fileno($child)) {
+    
+        chomp($exitcode = <$child>);
+        close($child);
+        
+    }
     
     $self->{_exitcode} = $exitcode;
         
@@ -171,6 +178,15 @@ sub onexit {
         $self->{onexit} = $code;
         
     }
+    
+}
+
+sub kill {
+    
+    my $self = shift;
+    my $signal = shift || 9;
+    
+    CORE::kill($signal, $self->{_pid}) if (defined $self->{_pid});
     
 }
 

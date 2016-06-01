@@ -26,7 +26,6 @@ use FindBin qw($Bin);
 use Fcntl qw(SEEK_END);
 use Getopt::Long qw(:config no_ignore_case);
 use threads;
-use threads::shared;
 use Thread::Queue;
 
 use lib $Bin . "/lib";
@@ -56,9 +55,7 @@ my ($tmp, $tmpdir, $output, $keep,
     $table, @bam_trim5, @tmp, @pool,
     %transcripts, %bases, %spacer);
 
-my $lock : shared;
-
-$tmp = int(rand(time())) + int(rand(time()));
+$tmp = randalphanum(0xf);
 $tmpdir = "/tmp/";
 $output = "rt_count/";
 $fa = "TGGAATTCTCGGGTGCCAAGG";
@@ -130,8 +127,8 @@ die "\n  [!] Error: Bowtie mismatches value must be an integer comprised between
                                                                                                    $bv !~ m/^[0-3]$/) ||
                                                                                                   (defined $bn &&
                                                                                                    $bn !~ m/^[0-3]$/));
-die "\n  [!] Error: Bowtie threads number must be an integer greater than 0\n\n" if (!isint($bp) ||
-                                                                                     $bp < 1);
+die "\n  [!] Error: Bowtie threads value must be an integer greater than 0\n\n" if (!isint($bp) ||
+                                                                                    $bp < 1);
 die "\n  [!] Error: No adapter's sequence provided\n\n"if (!defined $fa);
 die "\n  [!] Error: Invalid adapter's sequence\n\n" if (!isdna($fa));
 die "\n  [!] Error: No FastQ quality scale provided\n\n" if (!defined $fq);
@@ -158,7 +155,7 @@ else {
         
         my $version = $1;
         
-        die "\n  [!] Error: RT Count requires SAMTools v1 or greater (Detected: v" . $version . ")\n\n" if (substr($version, 0, 1) < 1);
+        die "\n  [!] Error: RT-Counter requires SAMTools v1 or greater (Detected: v" . $version . ")\n\n" if (substr($version, 0, 1) < 1);
         
     }
     else { warn "\n  [!] Warning: Unable to detect SAMTools version\n"; }
@@ -219,7 +216,7 @@ foreach my $sample (uniq(@ARGV)) {
     
     die "  [!] Error: Specified sample \"" . $sample . "\" file doesn't exist\n\n" if (!-e $sample);
 
-    my $file = (fileparse($sample, qr/\.[^.]*/))[0];
+    my ($file, $path, $extension) = fileparse($sample, qr/\.[^.]*/);
     
     push(@tmp, { path  => $sample,
                  file  => $file,
@@ -610,8 +607,7 @@ sub count {
         my ($lastid, $covered, @stops, @coverage);
         $covered = 0;
         
-        { lock($lock);
-          print "\n  [-] Processing sample \"" . $sample->{file} . "\"" . (" " x $spacer{$sample->{file}}) . "(Thread #" . threads->tid . ")..."; }
+        print "\n  [-] Processing sample \"" . $sample->{file} . "\"" . (" " x $spacer{$sample->{file}}) . "(Thread #" . threads->tid . ")...";
         
         copy($tmpdir . $tmp . "_base.rtc", $output . "counts/" . $sample->{file} . ".rtc") or $qresults->enqueue("\n  [!] Error: Unable to copy counts table structure for sample \"" .
                                                                                                                  $sample->{file} . "\" (" . $! . ")") and next;
@@ -698,11 +694,14 @@ sub count {
 
 sub cleanup {
     
-    unlink(glob($tmpdir . $tmp . "*"));
+    if ($madetmp) {
     
-    rmtree($tmpdir, { safe      => 1,
-                      keep_root => 0,
-                      error     => \$error }) if ($madetmp);
+        rmtree($tmpdir, { safe      => 1,
+                          keep_root => 0,
+                          error     => \$error });
+        
+    }
+    else { unlink(glob($tmpdir . $tmp . "*")); }
     
 }
 
@@ -791,7 +790,7 @@ sub help {
     
     die <<HELP;
  
- RT Count (v1.1.0)
+ RT Count (v1.0.0a)
  Epigenetics Units @ HuGeF [Human Genetics Foundation]
  Group leader: Prof. Salvatore Oliviero
     

@@ -29,7 +29,7 @@ sub new {
     
     bless($self, $class);
     
-    $self->_init({verbosity => 0}, \%parameters);
+    $self->_init({verbosity => undef}, \%parameters);
     
     return($self);
     
@@ -43,7 +43,7 @@ sub _init {
     if (my $parameters = checkparameters($default, $provided)) {
         
         $self->{$_} = $parameters->{$_} for (keys %{$parameters});
-        $self->verbosity($self->{verbosity} // 0);
+        $self->verbosity($self->{verbosity}) if (defined $self->{verbosity});
         
     }
     else { $self->throw("Default parameters must be provided as an HASH reference"); }

@@ -25,7 +25,8 @@ use base qw(Exporter);
 
 our @EXPORT = qw(pearson spearman dhyper phyper
                  fisher percentile quantile padjust
-                 pchisq qnorm pnorm pcombine);
+                 pchisq qnorm pnorm pcombine
+                 gini);
 
 use constant EPS   => 3e-7;
 use constant FPMIN => 1e-30;
@@ -372,6 +373,38 @@ sub choose {
 
     }
     else { return(exp(logfact($total) - logfact($choose) - logfact($total - $choose))); }
+    
+}
+
+sub gini {
+    
+    my @values = @_;
+    
+    Core::Utils::throw("Values array is empty") if (!@values);
+    Core::Utils::throw("Values must be numeric") if (!isnumeric(@values));
+    
+    return(0) if (@values == 1);
+    
+    my ($mean, $gini);
+    $mean = mean(@values);
+    
+    return(0) if (!$mean);
+    
+    for(my $i = 0; $i < @values; $i++) {
+        
+        for(my $j = 0; $j < @values; $j++) {
+            
+            next if ($i == $j);
+            $gini += abs($values[$i] - $values[$j]);
+            
+        }
+        
+    }
+    
+    $gini /= 2 * (@values ** 2);
+    $gini /= $mean;
+    
+    return($gini);
     
 }
 

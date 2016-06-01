@@ -86,6 +86,7 @@ do {
 help() if ($help);
 
 if (!$normwin) { $normwin = $scoremethod =~ m/^Ding|1$/i ? 1e9 : 50; }
+if (!$winoffset) { $winoffset = $scoremethod =~ m/^Ding|1$/i ? 1e9 : 50; }
 
 die "\n  [!] Error: Number of processors must be an integer greater than 0\n\n" if ($threads < 1);
 die "\n  [!] Error: Decimals value must be an integer comprised between 1 and 10\n\n" if ($decimals < 1 ||
@@ -212,10 +213,9 @@ sub norm {
     
     while (my $id = $queue->dequeue()) {
         
-        my ($tentry, $sequence, $lasti, @tstops,
-            @last, @norm);
+        my ($tentry, $sequence, $winlen, $winoffset,
+            @tstops, @last, @norm);
         $tentry = $trtc->read($id);
-        $lasti = 0;
         
         if ($tentry->meancoverage() < $config->meancoverage() ||
             $tentry->mediancoverage() < $config->mediancoverage()) {
@@ -293,11 +293,14 @@ sub norm {
         
         # This part works both for Ding and Rouskin (if Ding needs to be performed in sliding windows)
         
-        for(my $i = 0; $i + $config->normwindow() - 1 <= $#tstops; $i += $config->windowoffset()) {
+        $winlen = $config->normwindow() > @tstops ? @tstops : $config->normwindow();
+        $winoffset = $winlen == @tstops ? $winlen : $config->windowoffset();
+        
+        for(my $i = 0; $i + $winlen - 1 <= $#tstops; $i += $winoffset) {
         
             my ($winseq, @winstops, @winnorm);
-            $winseq = substr($sequence, $i, $config->normwindow());
-            @winstops = @tstops[$i .. $i + $config->normwindow() - 1];
+            $winseq = substr($sequence, $i, $winlen);
+            @winstops = @tstops[$i .. $i + $winlen - 1];
             
             foreach my $base ($config->normindependent() ? split(//, $config->reactivebases()) : $config->reactivebases()) {
                 
@@ -329,16 +332,15 @@ sub norm {
             #    @last = @winnorm[$#last + 1 .. $#winnorm];                                                 # Fills remaining window for next cycle
             #
             #}
-
-            $lasti = $i + $config->windowoffset();
         
         }
         
-        if ($lasti < $#tstops) { # if Last < norm-win bases
+        if (@norm < @tstops) { # Missing the last window
 
-            my ($winseq, @winstops, @winnorm);
-            $winseq = substr($sequence, $lasti);
-            @winstops = @tstops[$lasti .. $#tstops];
+            my ($winseq, $i, @winstops, @winnorm);
+            $i = @tstops - $winlen;
+            $winseq = substr($sequence, $i);
+            @winstops = @tstops[$i .. $#tstops];
             
             foreach my $base ($config->normindependent() ? split(//, $config->reactivebases()) : $config->reactivebases()) {
                 
@@ -358,14 +360,11 @@ sub norm {
             #
             #@norm = (@norm, @winnorm[$#last + 1 .. $#winnorm]);
             
-            for (0 .. $#winnorm) { push(@{$norm[$_ + $lasti]}, $winnorm[$_]); }
+            for (0 .. $#winnorm) { push(@{$norm[$_ + $i]}, $winnorm[$_]); }
             
         }
         
         @norm = map { isnumeric(@{$_}) ? mean(@{$_}) : undef } @norm;
-        
-        { lock(%results);
-          $results{cov}++; }
         
         if ($nan) {
             
@@ -391,8 +390,8 @@ sub norm {
                         reactive => $config->reactivebases(),
                         scoring  => $config->scoremethod(1),
                         norm     => $config->normmethod(1),
-                        offset   => $config->windowoffset(),
-                        win      => $config->normwindow() };
+                        offset   => $winoffset,
+                        win      => $winlen };
         
         if ($config->scoremethod() == 1) { # Ding
           
@@ -418,7 +417,10 @@ sub norm {
         $spd->addtext($reactivity);
         $spd->write();       
         
-        print CLRRET . "[+] Normalizing reactivities [Last: $id]"; 
+        { lock(%results);
+          $results{cov}++;
+          
+          print CLRRET . "[+] Normalizing reactivities [Last: $id]"; }
         
     }
     
@@ -541,7 +543,7 @@ sub help {
  -rb or --reactive-bases             Reactive bases to consider for signal normalization (Default: N)
  -ni or --norm-independent           Each one of the reactive bases will be normalized independently
  -nw or --norm-window                Window for signal normalization (>=3, Default: whole transcript [Ding], 50 [Rouskin])
- -wo or --window-offset              Offset for sliding window during normalization (Default: 50)
+ -wo or --window-offset              Offset for sliding window during normalization (Default: none [Ding], 50 [Rouskin])
  -mc or --mean-coverage              Discards any transcript with mean coverage below this threshold (>=0, Default: 1)
  -ec or --median-coverage            Discards any transcript with median coverage below this threshold (>=0, Default: 1)
  -d  or --decimals                   Number of decimals for reporting reactivities (1-10, Default: 3)

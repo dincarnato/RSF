@@ -51,7 +51,7 @@ my ($output, $ct, $input, $method,
     $maxdist, $constmethod, $constconversion, $beta,
     $modslope, $modintercept, $installed, $queue,
     $overwrite, $error, $help, $tmpdir,
-    $foldparams, @spd, @pool, %modules);
+    @spd, @pool, %modules);
 
 $output = "structurome";
 $method = 1;
@@ -99,7 +99,7 @@ do {
                 "ms|model-slope=s"           => \$modslope,
                 "mi|model-intercept=s"       => \$modintercept,
                 "r|rnastructure=s"           => \$rnastructure,
-                "dp|data-path=s"             => \$data,) or help(1);
+                "dp|data-path=s"             => \$data ) or help(1);
     
     $input = $ARGV[0];
 
@@ -108,7 +108,7 @@ do {
 help() if ($help);
 
 $viennarna = which("RNAfold") if (!defined $viennarna);
-$rnastructure = which("Fold-smp") || which("Fold") if (!defined $rnastructure);
+$rnastructure = which("Fold") if (!defined $rnastructure);
 $data = $ENV{DATAPATH} if (!defined $data);
 $output =~ s/\/?$/\// if (defined $output);
 $tmpdir = $output . "tmp/";
@@ -122,13 +122,13 @@ $installed = ExtUtils::Installed->new();
 die "\n  [!] Error: No output directory specified\n\n" unless(defined $output);
 die "\n  [!] Error: No SPD directory\/file specified\n\n" unless(defined $input);
 die "\n  [!] Error: Provided SPD directory\/file doesn't exist\n\n" if (!-e $input);
+die "\n  [!] Error: Number of processors must be an integer greater than 0\n\n" if ($threads < 1);
 die "\n  [!] Error: Invalid folding method\n\n" unless($method =~ m/^[12]$/);
 die "\n  [!] Error: Temperature must be a positive value\n\n" unless(ispositive($t));
 die "\n  [!] Error: Temperature must be comprised between 0 and 100 degree Celsius\n\n" if ($t > 100);
 die "\n  [!] Error: Invalid slope value\n\n" unless(isnumeric($slope));
 die "\n  [!] Error: Invalid intercept value\n\n" unless(isnumeric($intercept));
-die "\n  [!] Error: Maximum distance value must be a positive integer\n\n" if (!isint($maxdist) ||
-                                                                               !ispositive($maxdist));
+die "\n  [!] Error: Maximum distance value must be a positive integer\n\n" if (!ispositive($maxdist));
 die "\n  [!] Error: No closing GU parameter requires folding method 1 (ViennaRNA)\n\n" if ($ngu &&
                                                                                            $method != 1);
 die "\n  [!] Error: No lonely pairs parameter requires folding method 1 (ViennaRNA)\n\n" if ($nlp &&
@@ -175,6 +175,9 @@ else { # RNAstructure
     if (!defined $rnastructure) { die "\n\n  [!] Error: RNAstructure Fold is not in PATH\n\n"; }
     elsif (!-e $rnastructure) { die "\n\n  [!] Error: RNAstructure Fold doesn't exist\n\n"; }
     elsif (!-x $rnastructure) { die "\n\n  [!] Error: RNAstructure Fold is not executable\n\n"; }
+    
+    if (!-e $Bin . "/spd2shape") { die "\n\n  [!] Error: SPD2Shape utility doesn't exist\n\n"; }
+    elsif (!-x $Bin . "/spd2shape") { die "\n\n  [!] Error: SPD2Shape utility is not executable\n\n"; }
 
     $ENV{DATAPATH} = $data;
     $t += 273.15; # RNAstructure expects a temperature in Kelvin degrees
@@ -208,34 +211,6 @@ mkpath($output . "images", { mode  => 0755,
                              error => \$error }) if ($img); 
     
 die "\n\n  [!] Error: Unable to create output directory (" . $error->[0]->{each(%{$error->[0]})} . ")\n\n" if (@{$error});
-
-# Defines universal folding parameters
-if ($method == 1) { # ViennaRNA
-            
-    if ($constmethod == 1) {    # Zarringhalam et al., 2012 (ViennaRNA 'Z')
-            
-        $foldparams = "--shapeMethod=Z" . $beta . " --shapeConversion=";
-        
-        if ($constconversion == 1) { $foldparams .= "S"; }                                             # ViennaRNA 'S'
-        elsif ($constconversion == 2) { $foldparams .= "M"}                                            # ViennaRNA 'M'
-        elsif ($constconversion == 3) { $foldparams .= "C" . $cutoff; }                                # ViennaRNA 'C'
-        elsif ($constconversion == 4) { $foldparams .= "Ls" . $modslope . "i" . $modintercept; }       # ViennaRNA 'L'
-        else { $foldparams .= "Os" . $modslope . "i" . $modintercept; }                                # ViennaRNA 'O'
-        
-    }
-    else { $foldparams = "--shapeMethod=Dm" . $slope . "b" . $intercept; }  # Deigan et al., 2009 (ViennaRNA 'D')
-    
-    $foldparams .= " --maxBPspan=" . $maxdist if ($maxdist);
-    $foldparams .= " --noLP" if ($nlp);
-    $foldparams .= " --noClosingGU" if ($ngu);
-
-}
-elsif ($method == 2) { # RNAstructure
-    
-    $foldparams = "-si " . $intercept . " -sm " . $slope . " -t " . $t;
-    $foldparams .= " -md " . $maxdist if ($maxdist);
-    
-}
 
 $queue = Thread::Queue->new();
 @pool = map{ threads->create(\&fold, $queue) } 1 .. $threads;
@@ -336,26 +311,43 @@ sub fold { # Threads
             lock(%results);
             $results{fastaerr}++;
             
-            unlink(glob($tmp . "*"));
-            
             next;
             
         }
        
         if ($method == 1) { # ViennaRNA
+        
+            $cmd = $viennarna . " --noPS --shape='" . $tmp . ".shape' -i '" . $tmp . ".fa'";
             
-            $cmd = $viennarna . " --shape='" . $tmp . ".shape' -i '" . $tmp . ".fa'";
-            $ret = `$cmd $foldparams --noPS 2>/dev/null`;
+            if ($constmethod == 1) {    # Zarringhalam et al., 2012 (ViennaRNA 'Z')
+                
+                $cmd .= " --shapeMethod=Z" . $beta . " --shapeConversion=";
+                
+                if ($constconversion == 1) { $cmd .= "S"; }                                             # ViennaRNA 'S'
+                elsif ($constconversion == 2) { $cmd .= "M"}                                            # ViennaRNA 'M'
+                elsif ($constconversion == 3) { $cmd .= "C" . $cutoff; }                                # ViennaRNA 'C'
+                elsif ($constconversion == 4) { $cmd .= "Ls" . $modslope . "i" . $modintercept; }       # ViennaRNA 'L'
+                else { $cmd .= "Os" . $modslope . "i" . $modintercept; }                                # ViennaRNA 'O'
+                
+            }
+            else { $cmd .= " --shapeMethod=Dm" . $slope . "b" . $intercept; }  # Deigan et al., 2009 (ViennaRNA 'D')
+            
+            $cmd .= " --maxBPspan=" . $maxdist if ($maxdist);
+            
+            $ret = `$cmd 2>/dev/null`;
             $structure = (split(/\n/, $ret))[2]; # Only extracts dot-bracket structure
             $structure =~ s/\s.+?$//;            # Removes free energy
         
         }
         elsif ($method == 2) { # RNAstructure
             
-            $cmd = $rnastructure . " '" . $tmp . ".fa' '" . $tmp . ".ct' -sh '" . $tmp . ".shape'";
-            $ret = `$cmd $foldparams 2>&1`;
+            $cmd = $rnastructure . " '" . $tmp . ".fa' '" . $tmp . ".ct' -si " . $intercept . " -sm " . $slope . " -t " . $t . " -sh '" . $tmp . ".shape'";
+            $cmd .= " -md " . $maxdist if ($maxdist);
             
-            if ($ret !~ m/Single strand folding complete\./) { # Something went wrong during RNAstructure execution
+            $ret = `$cmd 2>&1`;
+            
+            if ($ret !~ m/Single strand folding complete\./ ||
+                $ret =~ m/incorrect|error/i) { # Something went wrong during RNAstructure execution
                 
                 lock(%results);
                 $results{folderr}++;
