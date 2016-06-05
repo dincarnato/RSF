@@ -115,6 +115,7 @@ $output =~ s/\/?$/\//;
 $bowtie = which("bowtie") if (!defined $bowtie);
 $fastx = which("fastx_clipper") if (!defined $fastx);
 $samtools = which("samtools") if (!defined $samtools);
+$bc = 2147483647 if ($bc > 2147483647);
 
 ##
 # Input validation
