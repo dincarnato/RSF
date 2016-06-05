@@ -46,10 +46,10 @@ Please see http://www.gnu.org/licenses/ for more informations.
 - Perl v5.12 (or greater), with ithreads support
 - Perl non-CORE modules (http://search.cpan.org/):
 
-    1. DBI  
+    1. DBD::MySQL  
     2. LWP::UserAgent  
     3. RNA (part of the ViennaRNA package)  
-    4. XML::Simple  
+    4. XML::LibXML::Simple  
 
 
 ## Installation

@@ -25,18 +25,19 @@ sub new {
     } 
     
     my $self = $class->SUPER::new(%parameters);
-    $self->_init({ file            => undef,
-                   scoremethod     => "Ding",
-                   normmethod      => "2-8\%",
-                   normwindow      => 50,
-                   windowoffset    => 50,
-                   reactivebases   => "all",
-                   normindependent => 0,
-                   pseudocount     => 1,
-                   maxscore        => 10,
-                   meancoverage    => 1,
-                   mediancoverage  => 1,
-                   autowrite       => 1 }, \%parameters); 
+    $self->_init({ file              => undef,
+                   scoremethod       => "Ding",
+                   normmethod        => "2-8\%",
+                   normwindow        => 50,
+                   windowoffset      => 50,
+                   reactivebases     => "all",
+                   normindependent   => 0,
+                   pseudocount       => 1,
+                   maxscore          => 10,
+                   meancoverage      => 1,
+                   mediancoverage    => 1,
+                   remapreactivities => 0,
+                   autowrite         => 1 }, \%parameters); 
     
     $self->_validate();
     $self->_fixproperties();
@@ -70,7 +71,8 @@ sub _validate {
     $self->throw("maxScore value should be greater than or equal to 1") if ($self->{maxscore} < 1);
     $self->throw("Invalid meanCoverage value") if (!ispositive($self->{meancoverage}));
     $self->throw("Invalid medianCoverage value") if (!ispositive($self->{mediancoverage}));
-    $self->throw("Automatic configuration file writing should be boolean") if ($self->{autowrite} !~ m/^[01]$/);
+    $self->throw("remapReactivities value must be boolean") if ($self->{remapreactivities} !~ m/^TRUE|FALSE|yes|no|[01]$/i);
+    $self->throw("Automatic configuration file writing must be boolean") if ($self->{autowrite} !~ m/^[01]$/);
     
 }
 
@@ -82,6 +84,7 @@ sub _fixproperties {
     $self->{normmethod} = $self->{normmethod} =~ m/^2-8\%|1$/ ? 1 : ($self->{normmethod} =~ m/^(90\% Winsorising|2)$/i ? 2 : 3);
     $self->{reactivebases} = $self->{reactivebases} =~ m/^all$/i ? "ACGT" : join("", sort(uniq(iupac2nt(rna2dna($self->{reactivebases})))));
     $self->{normindependent} = $self->{normindependent} =~ m/^TRUE|yes|1$/i ? 1 : 0;
+    $self->{remapreactivities} = $self->{remapreactivities} =~ m/^TRUE|yes|1$/i ? 1 : 0;
     
 }
 
@@ -105,6 +108,8 @@ sub meancoverage { return($_[0]->{meancoverage}); }
 
 sub mediancoverage { return($_[0]->{mediancoverage}); }
 
+sub remapreactivities { return($_[0]->{remapreactivities}); }
+
 sub summary {
     
     my $self = shift;
@@ -120,6 +125,8 @@ sub summary {
         $table->row("Maximum score", $self->{maxscore});
         
     }
+    
+    $table->row("Remap reactivities", $self->{remapreactivities}) if ($self->{normmethod} == 3);
         
     $table->row("Normalization window", $self->{normwindow});
     $table->row("Window sliding offset", $self->{windowoffset});
@@ -153,12 +160,14 @@ sub write {
         
     }
     
+    print $fh "remapReactivities=" . $self->{remapreactivities} . "\n" if ($self->{normmethod} == 3);
+    
     print $fh "normWindow=" . $self->{normwindow} . "\n" .
               "windowOffset=" . $self->{windowoffset} . "\n" .
               "reactiveBases=" . $self->{reactivebases} . "\n" .
               "normIndependent=" . ($self->{normindependent} ? "yes" : "no") . "\n" .
               "meanCoverage=" . $self->{meancoverage} . "\n" .
-              "mediancoverage=" . $self->{mediancoverage} . "\n";
+              "medianCoverage=" . $self->{mediancoverage} . "\n";
               
     close($fh);
     

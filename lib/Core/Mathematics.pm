@@ -37,7 +37,7 @@ our %EXPORT_TAGS = ( constants => [ qw(e pi inf pinf ninf nan) ],
                      functions => [ qw(logarithm min max mean
                                        average geomean midrange stdev
                                        mode median round sum
-                                       product) ] );
+                                       product maprange) ] );
 
 { my (%seen);
   push(@{$EXPORT_TAGS{$_}}, @EXPORT) foreach (keys %EXPORT_TAGS);
@@ -358,6 +358,17 @@ sub product {
     
     return($product);
     
+}
+
+sub maprange {
+
+    my ($oldmin, $oldmax, $newmin, $newmax, $value) = @_;
+    
+    Core::Utils::throw("Invalid old range boundaries (old minimum is equal to old maximum)") if ($oldmin == $oldmax);
+    Core::Utils::throw("Invalid new range boundaries (new minimum is equal to new maximum)") if ($newmin == $newmax);
+    
+    return(((($value - $oldmin) * ($newmax - $newmin)) / ($oldmax - $oldmin)) + $newmin);
+
 }
                
 1;

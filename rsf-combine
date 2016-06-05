@@ -25,7 +25,7 @@ use Getopt::Long qw(:config no_ignore_case);
 use threads;
 use threads::shared;
 use Thread::Queue;
-use XML::Simple;
+use XML::LibXML::Simple qw(XMLin);
 
 use lib $Bin . "/lib";
 
@@ -61,12 +61,12 @@ do {
     
     local $SIG{__WARN__} = sub { };
 
-    GetOptions( "h|help"                    => \$help,
-                "o|output-dir=s"            => \$output,
-                "ow|overwrite"              => \$overwrite,
-                "s|stdev"                   => \$stdev,
-                "p|processors=i"            => \$threads,
-                "d|decimals=i"              => \$decimals ) or help(1);
+    GetOptions( "h|help"         => \$help,
+                "o|output-dir=s" => \$output,
+                "ow|overwrite"   => \$overwrite,
+                "s|stdev"        => \$stdev,
+                "p|processors=i" => \$threads,
+                "d|decimals=i"   => \$decimals ) or help(1);
     
     @spd = uniq(@ARGV);
 
@@ -175,7 +175,8 @@ sub combine {
         
         my ($spdref, $sequence, $scoring, $reactive,
             $norm, $spd, $mean, $std, $attributes,
-            $offset, $win, @profile, @mean, @stdev);
+            $offset, $win, $remap, @profile, @mean,
+            @stdev);
         
         for (@spd) {
             
@@ -193,6 +194,7 @@ sub combine {
                 $norm = $spdref->{norm} if (!defined $norm);
                 $win = $spdref->{win} if (!defined $win);
                 $offset = $spdref->{offset} if (!defined $offset);
+                $remap = $spdref->{remap} if (!defined $remap);
                 $reactive .= $spdref->{reactive};
                 
                 if ($sequence ne $spdref->{transcript}->{sequence}) {
@@ -213,7 +215,9 @@ sub combine {
                     
                 }
                 
-                if ($norm ne $spdref->{norm}) {
+                if ($norm ne $spdref->{norm} ||
+                    ($norm eq $spdref->{norm} &&
+                     $remap != $spdref->{remap})) {
                     
                     lock(%results);
                     $results{diffnorm}++;
@@ -222,7 +226,7 @@ sub combine {
                     
                 }
                 
-                if ($win ne $spdref->{win}) {
+                if ($win != $spdref->{win}) {
                     
                     lock(%results);
                     $results{diffwin}++;
@@ -231,7 +235,7 @@ sub combine {
                     
                 }
                 
-                if ($offset ne $spdref->{offset}) {
+                if ($offset != $spdref->{offset}) {
                     
                     lock(%results);
                     $results{diffoffset}++;
@@ -300,7 +304,8 @@ sub combine {
                         scoring  => $scoring,
                         norm     => $norm,
                         win      => $win,
-                        offset   => $offset };
+                        offset   => $offset,
+                        remap    => $remap };
         
         $spd = Data::IO::XML->new( file      => $output . $id . ".spd",  
                                    mode      => "w",

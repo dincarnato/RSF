@@ -26,7 +26,7 @@ use Getopt::Long qw(:config no_ignore_case);
 use threads;
 use threads::shared;
 use Thread::Queue;
-use XML::Simple;
+use XML::LibXML::Simple qw(XMLin);
 
 use lib $Bin . "/lib";
 

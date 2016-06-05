@@ -5,8 +5,7 @@
 # Epigenetics Unit @ HuGeF [Human Genetics Foundation]
 #
 # Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
-# Summary: Produces SPD files by calculating the partition function folding for a
-#          given RNA, and reporting the probability of each base of being unpaired
+# Summary: Produces SPD files using the probability of bases of being unpaired
 #
 # This program is free software, and can be redistribute  and/or modified
 # under the terms of the GNU General Public License as published by
@@ -409,8 +408,7 @@ sub help {
  Group leader: Prof. Salvatore Oliviero
     
  Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
- Summary: Summary: Produces SPD files by calculating the partition function folding for a
-          given RNA, and reports the probability of each base of being unpaired
+ Summary: Produces SPD files using the probability of bases of being unpaired
  
  Usage:   rsf-silico [Options]
  
@@ -423,7 +421,7 @@ sub help {
  -m   or --method                    Partition function calculation method (Default: 1): [1] ViennaRNA
                                                                                          [2] RNAstructure
                                                                                          [3] Combined
-                                     Note: Method #3 calculates base-pair probabilities using both ViennaRNA and RNAstructure,
+                                     Note: method #3 calculates base-pair probabilities using both ViennaRNA and RNAstructure,
                                            and produces a SPD file containing the per-base average of the two methods
  -e   or --temperature               Temperature in Celsius degrees (Default: 37.0)
  -md  or --maximum-distance          Sets the maximum pairing distance in nucleotides between transcript's residues (Default: 0 [No limit])
@@ -431,7 +429,7 @@ sub help {
  -pr  or --partition                 Path to RNAstructure Partition executable (Default: assumes Partition is in PATH)
  -pp  or --probability-plot          Path to RNAstructure ProbabilityPlot executable (Default: assumes ProbabilityPlot is in PATH)
  -dp  or --data-path                 Path to RNAstructure data tables (Default: assumes DATAPATH environment variable is already set)
- -w   or --window-size               Window size in nt for base-pair probability calculation (>=3, Default: full transcript)
+ -w   or --window-size               Window for base-pair probability calculation (>=3, Default: full transcript)
  -wo  or --window-offset             Offset for window sliding (Default: none)
  -kb  or --keep-bases                Bases to report in the SPD file (Default: N)
                                      Note: excluded bases will be reported as NaN in the SPD file

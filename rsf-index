@@ -22,7 +22,7 @@ use File::Path qw(mkpath rmtree);
 use FindBin qw($Bin);
 use Getopt::Long qw(:config no_ignore_case);
 use LWP::UserAgent;
-use XML::Simple;
+use XML::LibXML::Simple qw(XMLin);
 
 use lib $Bin . "/lib";
 
@@ -292,6 +292,8 @@ if (!defined $reference) {
             
         }
         
+        print CLRRET . "  [*] Chromosome " . $chromosome . $spacer . "[Parsing XML]";
+        
         $xml = eval { XMLin($content) };
         
         if ($@) {
@@ -306,9 +308,11 @@ if (!defined $reference) {
             
         }
         
-        $xml->{SEQUENCE}->{DNA}->{content} =~ s/^\n+//g;
+        #$xml->{SEQUENCE}->{DNA}->{content} =~ s/^\n+//g;
         
-        print $wh ">" . $chromosome . "\n" . $xml->{SEQUENCE}->{DNA}->{content};
+        print $wh ">" . $chromosome . uc($xml->{SEQUENCE}->{DNA}->{content});
+        
+        print CLRRET . "  [*] Chromosome " . $chromosome . $spacer . "[DONE]";
         
     }
     

@@ -45,7 +45,7 @@ my ($help, $output, $overwrite, $configfile,
     $meancov, $mediancov, $untreated, $treated,
     $index, $config, $error, $threads,
     $rtc, $queue, $hasctrl, $decimals,
-    $nan, @index, @pool, @ids);
+    $nan, $remap, @index, @pool, @ids);
 
 my %results : shared;
 %results = ( cov     => 0,
@@ -55,31 +55,34 @@ my %results : shared;
 
 $threads = 1;
 $decimals = 3;
+$scoremethod = 1;
+$normmethod = 1;
 
 do {
     
     local $SIG{__WARN__} = sub { };
 
-    GetOptions( "h|help"               => \$help,
-                "o|output-dir=s"       => \$output,
-                "ow|overwrite"         => \$overwrite,
-                "c|config-file=s"      => \$configfile,
-                "sm|scoring-method=s"  => \$scoremethod,
-                "nm|norm-method=s"     => \$normmethod,
-                "nw|norm-window=i"     => \$normwin,
-                "wo|window-offset=i"   => \$winoffset,
-                "rb|reactive-bases=s"  => \$reactive,
-                "ni|norm-independent"  => \$independent,
-                "pc|pseudocount=i"	   => \$pseudocount,
-                "s|max-score=s"        => \$maxscore,
-                "mc|mean-coverage=s"   => \$meancov,
-                "ec|median-coverage=s" => \$mediancov,
-                "u|untreated=s"        => \$untreated,
-                "t|treated=s"          => \$treated,
-                "i|index=s"            => \$index,
-                "d|decimals=i"         => \$decimals,
-                "p|processors=i"       => \$threads,
-                "n|nan"                => \$nan ) or help(1);
+    GetOptions( "h|help"                => \$help,
+                "o|output-dir=s"        => \$output,
+                "ow|overwrite"          => \$overwrite,
+                "c|config-file=s"       => \$configfile,
+                "sm|scoring-method=s"   => \$scoremethod,
+                "nm|norm-method=s"      => \$normmethod,
+                "nw|norm-window=i"      => \$normwin,
+                "wo|window-offset=i"    => \$winoffset,
+                "rb|reactive-bases=s"   => \$reactive,
+                "ni|norm-independent"   => \$independent,
+                "pc|pseudocount=i"	    => \$pseudocount,
+                "s|max-score=s"         => \$maxscore,
+                "mc|mean-coverage=s"    => \$meancov,
+                "ec|median-coverage=s"  => \$mediancov,
+                "u|untreated=s"         => \$untreated,
+                "t|treated=s"           => \$treated,
+                "i|index=s"             => \$index,
+                "d|decimals=i"          => \$decimals,
+                "p|processors=i"        => \$threads,
+                "n|nan"                 => \$nan,
+                "rm|remap-reactivities" => \$remap ) or help(1);
 
 };
 
@@ -97,17 +100,18 @@ print "\n[+] Parsing configuration...";
 print "\n\n  [!] Warning: Provided configuration file doesn't exist. Will be created...\n" if (defined $configfile &&
                                                                                                !-e $configfile);
 
-$config = RSF::Config->new( file            => $configfile,
-                            scoremethod     => $scoremethod,
-                            normmethod      => $normmethod,
-                            normwindow      => $normwin,
-                            windowoffset    => $winoffset,
-                            reactivebases   => $reactive,
-                            normindependent => $independent,
-                            pseudocount     => $pseudocount,
-                            maxscore        => $maxscore,
-                            meancoverage    => $meancov,
-                            mediancoverage  => $mediancov );
+$config = RSF::Config->new( file              => $configfile,
+                            scoremethod       => $scoremethod,
+                            normmethod        => $normmethod,
+                            normwindow        => $normwin,
+                            windowoffset      => $winoffset,
+                            reactivebases     => $reactive,
+                            normindependent   => $independent,
+                            pseudocount       => $pseudocount,
+                            maxscore          => $maxscore,
+                            meancoverage      => $meancov,
+                            mediancoverage    => $mediancov,
+                            remapreactivities => $remap );
 
 $config->summary();
 $hasctrl = $config->scoremethod() == 2 ? 0 : 1;
@@ -365,6 +369,8 @@ sub norm {
         }
         
         @norm = map { isnumeric(@{$_}) ? mean(@{$_}) : undef } @norm;
+        @norm = zarringhalam(@norm) if ($config->normmethod() == 3 &&
+                                        $config->remapreactivities());
         
         if ($nan) {
             
@@ -399,6 +405,8 @@ sub norm {
             $attributes->{pseudo} = $config->pseudocount();
           
         }
+        
+        $attributes->{remap} = $config->remapreactivities() if ($config->normmethod() == 3);
         
         $spd = Data::IO::XML->new( file      => $output . $id . ".spd",  
                                    mode      => "w",
@@ -438,12 +446,7 @@ sub winsor_90 {  # 90% Winsorising
     
     return() unless($percentile);
     
-    for (@reactivity) {
-        
-        $_ = $percentile if ($_ > $percentile);
-        $_ /= $percentile;
-        
-    }
+    @reactivity = map { min($_ / $percentile, 1) } @reactivity;
     
     return(@reactivity);
     
@@ -468,7 +471,7 @@ sub norm_28 {  # 2-8% Normalization
     
     return() if ($avg == 0);
     
-    $_ = max(0, min($_/$avg, 1)) for(@reactivity);
+    @reactivity = map { max(0, min($_ / $avg, 1)) } @reactivity;
     
     return(@reactivity);
     
@@ -497,8 +500,40 @@ sub boxplot {
     
     return() if ($avg == 0);
     
-    $_ = max(0, $_ / $avg) for (@reactivity); # Values will range between 0 and ~1.5 according to
-                                              # "SHAPE-Directed RNA Secondary Structure Prediction" (Low et al., 2010)
+    # Values will range between 0 and ~1.5 according to
+    # "SHAPE-Directed RNA Secondary Structure Prediction" (Low et al., 2010)
+    @reactivity = map { max(0, $_ / $avg) } @reactivity;
+    
+    return(@reactivity);
+    
+}
+
+sub zarringhalam {
+    
+    my @reactivity = @_;
+    
+    return if (!@reactivity);
+    
+    my ($oldmin, $newmin, $oldmax, $newmax,
+        $max);
+    $max = max(grep { defined $_ } @reactivity);
+    
+    
+    for (@reactivity) {
+        
+        next if (!isnumeric($_));
+        
+        if ($_ < 0.25) { ($oldmin, $oldmax, $newmin, $newmax) = (0, 0.25, 0, 0.35); }
+        elsif ($_ >= 0.25 &&
+               $_ < 0.3) { ($oldmin, $oldmax, $newmin, $newmax) = (0.25, 0.3, 0.35, 0.55); }
+        elsif ($_ >= 0.3 &&
+               $_ < 0.7) { ($oldmin, $oldmax, $newmin, $newmax) = (0.3, 0.7, 0.55, 0.85); }
+        else { ($oldmin, $oldmax, $newmin, $newmax) = (0.7, $max, 0.85, 1); }
+        
+        $_ = maprange($oldmin, $oldmax, $newmin, $newmax, $_);
+        
+    }
+    
     return(@reactivity);
     
 }
@@ -552,6 +587,9 @@ sub help {
  Scoring method #1 options (Ding et al., 2014)
  -pc or --pseudocount                Pseudocount added to reactivities to avoid division by 0 (>0, Default: 1)
  -s  or --max-score                  Score threshold for capping raw reactivities (>1, Default: 10)
+ 
+ Normalization method #3 options (Box-plot normalization)
+ -rm or --remap-reactivities         Remaps reactivities to values ranging from 0 to 1 according to Zarringhalam et al., 2012
  
 HELP
     

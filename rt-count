@@ -72,6 +72,7 @@ $hex = 5;
 $offset = 0;
 $threads = 1;
 $madetmp = 0;
+$bam_trim5 = 0;
 %bases = map { $_ => --$hex } qw(N T G C A);
 
 do {

@@ -319,7 +319,8 @@ sub which {
     
     my $file = shift || return();
     
-    for (map { File::Spec->catfile($_, $file) } File::Spec->path()) { return($_) if (-x $_); }
+    for (map { File::Spec->catfile($_, $file) } File::Spec->path()) { return($_) if (-x $_ &&
+                                                                                     !-d $_); }
     
     return();
     
