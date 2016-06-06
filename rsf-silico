@@ -44,7 +44,7 @@ my ($tmp, $tmpdir, $multifasta, $t,
     $output, $overwrite, $help, $error,
     $viennarna, $partition, $data, $maxdist,
     $probplot, $method, $madetmp, $keepbases,
-    $threads, $queue, @pool);
+    $threads, $queue, $scoring, @pool);
 $t = 37.0;
 $tmp = randalphanum(0xf);
 $tmpdir = "/tmp/";
@@ -111,6 +111,7 @@ die "\n  [!] Error: Invalid reactive bases\n\n" if ($keepbases !~ m/^all$/i &&
 
 $output =~ s/\/?$/\//;
 $keepbases = $keepbases =~ m/^all$/i ? "ACGT" : join("", sort(uniq(iupac2nt(rna2dna($keepbases)))));
+$scoring = $method == 1 ? "ViennaRNA" : ($method == 2 ? "RNAstructure" : "Combined");
 
 $SIG{__DIE__} = \&cleanup;
 
@@ -275,7 +276,10 @@ sub partcalc {
                                    autoclose => 1,
                                    verbosity => -1 );
         
-        $spd->opentag("data", { reactive => $keepbases,
+        $spd->opentag("data", { combined => "FALSE",
+                                scoring  => $scoring,
+                                norm     => "none",
+                                reactive => $keepbases,
                                 offset   => $off,
                                 win      => $win });
         $spd->opentag("transcript", { id     => $id,
