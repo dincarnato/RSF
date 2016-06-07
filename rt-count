@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 ##
-# RT Count (v1.0.0a)
+# RT Count (v1.1.0)
 # Epigenetics Unit @ HuGeF [Human Genetics Foundation]
 #
 # Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
@@ -45,7 +45,7 @@ die "\n  [!] Error: This program requires ithreads." .
 
 my ($tmp, $tmpdir, $output, $keep,
     $trim3, $trim5, $bv, $bn,
-    $ba, $bp, $bi, $bc,
+    $ba, $wt, $bi, $bc,
     $fa, $fq, $fl, $bowtie,
     $fastx, $samtools, $multifasta, $sam,
     $sorted, $clipped, $help, $overwrite,
@@ -64,7 +64,7 @@ $fq = 33;
 $trim5 = 0;
 $trim3 = 0;
 $bn = 2;
-$bp = 1;
+$wt = 1;
 $bc = 128;
 $bm = 1;
 $fastq = 0;
@@ -92,7 +92,7 @@ do {
                 "bn|bowtie-n=i"           => \$bn,
                 "ba|bowtie-all"           => \$ba,
                 "bm|bowtie-max=i"	      => \$bm,
-                "bp|bowtie-threads=i"     => \$bp,
+                "wt|working-threads=i"    => \$wt,
                 "bi|bowtie-index=s"       => \$bi,
                 "bc|bowtie-chunkmbs=i"    => \$bc,
                 "fa|fastx-adapter=s"      => \$fa,
@@ -129,8 +129,8 @@ die "\n  [!] Error: Bowtie mismatches value must be an integer comprised between
                                                                                                    $bv !~ m/^[0-3]$/) ||
                                                                                                   (defined $bn &&
                                                                                                    $bn !~ m/^[0-3]$/));
-die "\n  [!] Error: Bowtie threads value must be an integer greater than 0\n\n" if (!isint($bp) ||
-                                                                                    $bp < 1);
+die "\n  [!] Error: Working threads value must be an integer greater than 0\n\n" if (!isint($wt) ||
+                                                                                     $wt < 1);
 die "\n  [!] Error: No adapter's sequence provided\n\n"if (!defined $fa);
 die "\n  [!] Error: Invalid adapter's sequence\n\n" if (!isdna($fa));
 die "\n  [!] Error: No FastQ quality scale provided\n\n" if (!defined $fq);
@@ -360,7 +360,7 @@ if ($fastq) { # Some of the provided files need to be mapped
         next if ($sample->{type} ne "FastQ");
         
         $processmanager->enqueue( command => $bowtie . ($trim3 ? " -3 " . $trim3 . " " : " ") . ($trim5 ? " -5 " . $trim5 . " " : " ") . "-q " . (defined $bv ? "-v " . $bv : "-n " . $bn) . " --norc " .
-                                                       ($ba ? "-a" : "-m " . $bm) . " --best --strata -p " . $bp . " --chunkmbs " . $bc . " -S \"" . $bi . "\" \"" . $sample->{path} . "\"" .
+                                                       ($ba ? "-a" : "-m " . $bm) . " --best --strata -p " . $wt . " --chunkmbs " . $bc . " -S \"" . $bi . "\" \"" . $sample->{path} . "\"" .
                                                        " | grep -v '4\t\\*\t0\t0' > \"" . $tmpdir . $tmp . "_" . $sample->{file} . ".sam\"",
                                   id      => $sample->{file},
                                   stderr  => $tmpdir . $tmp . "_" . $sample->{file} . "_mapping.log" );
@@ -404,7 +404,7 @@ if ($fastq) { # Some of the provided files need to be mapped
         
         my $path = $keep ? $output . ($nobam ? "SAM/" : "BAM/") . $sample->{file} . ($nobam ? ".sam" : ".bam") : $tmpdir . $tmp . "_" . $sample->{file} . "_sorted.sam";
         
-        $processmanager->enqueue( command => $samtools . " sort -O " . ($nobam ? "sam" : "bam") . " -T " . $tmpdir . $tmp . "_" . $sample->{file} . " -o " . $path . " " . $sample->{path},
+        $processmanager->enqueue( command => $samtools . " sort --threads " . $wt . " -O " . ($nobam ? "sam" : "bam") . " -T " . $tmpdir . $tmp . "_" . $sample->{file} . " -o " . $path . " " . $sample->{path},
                                   id      => $sample->{file} );
         
         $sample->{path} = $path;
@@ -792,7 +792,7 @@ sub help {
     
     die <<HELP;
  
- RT Count (v1.0.0a)
+ RT Count (v1.1.0)
  Epigenetics Units @ HuGeF [Human Genetics Foundation]
  Group leader: Prof. Salvatore Oliviero
     
@@ -803,6 +803,9 @@ sub help {
  
  Options                             Description
  -p  or --processors                 Number of processors to use (Default: 1)
+ -wt or --working-threads            Number of working threads to use for each instance of SAMTools/Bowtie (Default: 1).
+                                     Note: RT Counter executes 1 instance of SAMTools/Bowtie for each processor specified by -p.
+                                           At least -p <processors> * -wt <threads> processors are required.
  -t  or --tmp-dir                    Temporary directory (Default: /tmp)
  -o  or --output-dir                 Output directory (Default: rt_count/)
  -ow or --overwrite                  Overwrites output directory (if the specified path already exists)
@@ -841,9 +844,6 @@ sub help {
  -b5 or --bowtie-trim-5prime         Number of bases to trim from 5'-end of the read (0-5 bases, Default: 0)
  -b3 or --bowtie-trim-3prime         Number of bases to trim from 3'-end of the read (0-15 bases, Default: 0)
  -bc or --bowtie-chunkmbs            Maximum MB of RAM for best-first search frames (Default: 128)
- -bp or --bowtie-threads             Number of threads to use for each instance of Bowtie (Default: 1).
-                                     Note: RT Counter executes 1 instance of Bowtie for each processor specified by -p.
-                                           At least -p <processors> * bowtie-threads processors are required.
  -bi or --bowtie-index               Path to transcriptome reference index
  
  
