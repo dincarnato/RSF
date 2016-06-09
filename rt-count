@@ -52,21 +52,23 @@ my ($tmp, $tmpdir, $output, $keep,
     $bm, $nobam, $error, $fastq,
     $bam_trim5, $hex, $offset, $threads,
     $processmanager, $madetmp, $qcounter, $qresults,
-    $table, @bam_trim5, @tmp, @pool,
-    %transcripts, %bases, %spacer);
+    $table, $bk, $fm, @bam_trim5, @tmp,
+    @pool, %transcripts, %bases, %spacer);
 
 $tmp = randalphanum(0xf);
 $tmpdir = "/tmp/";
 $output = "rt_count/";
 $fa = "TGGAATTCTCGGGTGCCAAGG";
-$fl = 35;
+$fl = 25;
 $fq = 33;
+$fm = 10;
 $trim5 = 0;
 $trim3 = 0;
 $bn = 2;
 $wt = 1;
 $bc = 128;
 $bm = 1;
+$bk = 1;
 $fastq = 0;
 $hex = 5;
 $offset = 0;
@@ -95,6 +97,7 @@ do {
                 "wt|working-threads=i"    => \$wt,
                 "bi|bowtie-index=s"       => \$bi,
                 "bc|bowtie-chunkmbs=i"    => \$bc,
+                "bk|bowtie-multimap=i"    => \$bk,
                 "fa|fastx-adapter=s"      => \$fa,
                 "fq|fastx-qual=i"         => \$fq,
                 "fl|fastx-len=i"          => \$fl,
@@ -104,7 +107,8 @@ do {
                 "s|samtools=s"            => \$samtools,
                 "r|sorted"                => \$sorted,
                 "p|processors=i"          => \$threads,
-                "f|fasta=s"               => \$multifasta ) or help(1);
+                "f|fasta=s"               => \$multifasta,
+                "fm|fastx-min-align=i"    => \$fm ) or help(1);
 
 };
 
@@ -136,8 +140,9 @@ die "\n  [!] Error: Invalid adapter's sequence\n\n" if (!isdna($fa));
 die "\n  [!] Error: No FastQ quality scale provided\n\n" if (!defined $fq);
 die "\n  [!] Error: FastQ quality scale can be 33 or 64\n\n" if ($fq !~ m/^33|64$/);
 die "\n  [!] Error: No minimum read length provided\n\n" if (!defined $fl);
-die "\n  [!] Error: Minimum read length should be an integer >= 25\n\n" if ($fl < 25);
-die "\n  [!] Error: Parameters -ba and -bm are mutually exclusive\n\n" if ($bm > 1 &&
+die "\n  [!] Error: Minimum read length should be an integer >= 10\n\n" if ($fl < 10);
+die "\n  [!] Error: Minimum adapter alignment should be an integer >= 5\n\n" if ($fm < 5);
+die "\n  [!] Error: Parameters -ba and -bk are mutually exclusive\n\n" if ($bk > 1 &&
                                                                            $ba);
 die "\n  [!] Error: Parameter -n requires parameter -k\n\n" if ($nobam &&
                                                                 !$keep);
@@ -315,7 +320,7 @@ if ($fastq) { # Some of the provided files need to be mapped
         
             next if ($sample->{type} ne "FastQ");
             
-            $processmanager->enqueue( command => $fastx . " -a " . $fa . " -l " . $fl . " -M 10 -Q " . $fq . " -i " . $sample->{path} . " -o " . $tmpdir . $tmp . "_" . $sample->{file} . ".fq",
+            $processmanager->enqueue( command => $fastx . " -a " . $fa . " -l " . $fl . " -M " . $fm . " -Q " . $fq . " -i " . $sample->{path} . " -o " . $tmpdir . $tmp . "_" . $sample->{file} . ".fq",
                                       id      => $sample->{file} );
         
             $sample->{path} = $tmpdir . $tmp . "_" . $sample->{file} . ".fq";
@@ -360,7 +365,7 @@ if ($fastq) { # Some of the provided files need to be mapped
         next if ($sample->{type} ne "FastQ");
         
         $processmanager->enqueue( command => $bowtie . ($trim3 ? " -3 " . $trim3 . " " : " ") . ($trim5 ? " -5 " . $trim5 . " " : " ") . "-q " . (defined $bv ? "-v " . $bv : "-n " . $bn) . " --norc " .
-                                                       ($ba ? "-a" : "-m " . $bm) . " --best --strata -p " . $wt . " --chunkmbs " . $bc . " -S \"" . $bi . "\" \"" . $sample->{path} . "\"" .
+                                                       ($ba ? "-a" : "-k " . $bk) . " -m " . $bm . " --best --strata -p " . $wt . " --chunkmbs " . $bc . " -S \"" . $bi . "\" \"" . $sample->{path} . "\"" .
                                                        " | grep -v '4\t\\*\t0\t0' > \"" . $tmpdir . $tmp . "_" . $sample->{file} . ".sam\"",
                                   id      => $sample->{file},
                                   stderr  => $tmpdir . $tmp . "_" . $sample->{file} . "_mapping.log" );
@@ -831,14 +836,15 @@ sub help {
  FASTX Clipper options
  -fa or --fastx-adapter              Sequence of 3' adapter for clipping (Default: TGGAATTCTCGGGTGCCAAGG)
  -fq or --fastx-qual                 FastQ files quality scale (33 [Default], or 64)
- -fl or --fastx-len                  Minimum length to keep reads after clipping (>=25, Default: 25)
+ -fl or --fastx-len                  Minimum length to keep reads after clipping (>=10, Default: 25)
+ -fm or --fastx-min-align            Minimum alignment in nt to adapter's sequence (>5, Default: 10)
  -c  or --clipped                    Assumes that the provided FastQ files have been already clipped
  
  Bowtie options
  -bn or --bowtie-n                   Use Bowtie mapper in -n mode (0-3 mismatches, Default: 2)
  -bv or --bowtie-v                   Use Bowtie mapper in -v mode (0-3 mismatches, Default: disabled)
- -bm or --bowtie-max                 Report up to this number of equally scoring positions for multi-mapping reads
-                                     (Default: 1, reports only uniquelly mapped reads)
+ -bm or --bowtie-max                 Discard alignment if more than this number of alignments exist (Default: 1)
+ -bk or --bowtie-multimap            Report up to this number of equally scoring positions for multi-mapping reads (Default: 1)
  -ba or --bowtie-all                 Report all equally scoring positions for multi-mapping reads
                                      (Default: disabled, reports only uniquely mapped reads)
  -b5 or --bowtie-trim-5prime         Number of bases to trim from 5'-end of the read (0-5 bases, Default: 0)
