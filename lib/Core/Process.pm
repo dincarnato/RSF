@@ -71,14 +71,16 @@ sub start {
           
             $self->{onstart}->($self->{id}, $$) if (defined $self->{onstart});
           
-            if ($self->{stdout}) {
+            if ($self->{stdout} &&
+                $self->{stdout} !~ m/^STDOUT$/i) {
               
                 open(STDOUT, ">", $self->{stdout}) or $self->throw("Unable to tee STDOUT to \"" . $self->{stdout} . "\" (" . $! . ")");
                 select((select(STDOUT), $|=1)[0]);
             
             }
         
-            if ($self->{stderr}) {
+            if ($self->{stderr} &&
+                $self->{stderr} !~ m/^STDERR$/i) {
                 
                 open(STDERR, ">", $self->{stderr}) or $self->throw("Unable to tee STDERR to \"" . $self->{stderr} . "\" (" . $! . ")");
                 select((select(STDERR), $|=1)[0]);
