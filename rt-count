@@ -46,22 +46,21 @@ die "\n  [!] Error: This program requires ithreads." .
 my ($tmp, $tmpdir, $output, $keep,
     $trim3, $trim5, $bv, $bn,
     $ba, $wt, $bi, $bc,
-    $fa, $fq, $fl, $bowtie,
-    $fastx, $samtools, $multifasta, $sam,
+    $ca, $cl, $bowtie,
+    $cutadapt, $samtools, $multifasta, $sam,
     $sorted, $clipped, $help, $overwrite,
     $bm, $nobam, $error, $fastq,
     $bam_trim5, $hex, $offset, $threads,
     $processmanager, $madetmp, $qcounter, $qresults,
-    $table, $bk, $fm, @bam_trim5, @tmp,
+    $table, $bk, $cm, @bam_trim5, @tmp,
     @pool, %transcripts, %bases, %spacer);
 
 $tmp = randalphanum(0xf);
 $tmpdir = "/tmp/";
 $output = "rt_count/";
-$fa = "TGGAATTCTCGGGTGCCAAGG";
-$fl = 25;
-$fq = 33;
-$fm = 10;
+$ca = "TGGAATTCTCGGGTGCCAAGG";
+$cl = 25;
+$cm = 1;
 $trim5 = 0;
 $trim3 = 0;
 $bn = 2;
@@ -98,17 +97,16 @@ do {
                 "bi|bowtie-index=s"       => \$bi,
                 "bc|bowtie-chunkmbs=i"    => \$bc,
                 "bk|bowtie-multimap=i"    => \$bk,
-                "fa|fastx-adapter=s"      => \$fa,
-                "fq|fastx-qual=i"         => \$fq,
-                "fl|fastx-len=i"          => \$fl,
-                "c|clipped"	              => \$clipped,
+                "ca|cutadapt-adapter=s"   => \$ca,
+                "cl|cutadapt-len=i"       => \$cl,
+                "cp|clipped"              => \$clipped,
                 "b|bowtie=s"              => \$bowtie,
-                "fx|fastx=s"              => \$fastx,
+                "c|cutadapt=s"            => \$cutadapt,
                 "s|samtools=s"            => \$samtools,
                 "r|sorted"                => \$sorted,
                 "p|processors=i"          => \$threads,
                 "f|fasta=s"               => \$multifasta,
-                "fm|fastx-min-align=i"    => \$fm ) or help(1);
+                "cm|cutadapt-min-align=i" => \$cm ) or help(1);
 
 };
 
@@ -117,7 +115,7 @@ help() if ($help);
 $tmpdir =~ s/\/?$/\//;
 $output =~ s/\/?$/\//;
 $bowtie = which("bowtie") if (!defined $bowtie);
-$fastx = which("fastx_clipper") if (!defined $fastx);
+$cutadapt = which("cutadapt") if (!defined $cutadapt);
 $samtools = which("samtools") if (!defined $samtools);
 $bc = 2147483647 if ($bc > 2147483647);
 
@@ -135,13 +133,11 @@ die "\n  [!] Error: Bowtie mismatches value must be an integer comprised between
                                                                                                    $bn !~ m/^[0-3]$/));
 die "\n  [!] Error: Working threads value must be an integer greater than 0\n\n" if (!isint($wt) ||
                                                                                      $wt < 1);
-die "\n  [!] Error: No adapter's sequence provided\n\n"if (!defined $fa);
-die "\n  [!] Error: Invalid adapter's sequence\n\n" if (!isdna($fa));
-die "\n  [!] Error: No FastQ quality scale provided\n\n" if (!defined $fq);
-die "\n  [!] Error: FastQ quality scale can be 33 or 64\n\n" if ($fq !~ m/^33|64$/);
-die "\n  [!] Error: No minimum read length provided\n\n" if (!defined $fl);
-die "\n  [!] Error: Minimum read length should be an integer >= 10\n\n" if ($fl < 10);
-die "\n  [!] Error: Minimum adapter alignment should be an integer >= 5\n\n" if ($fm < 5);
+die "\n  [!] Error: No adapter's sequence provided\n\n"if (!defined $ca);
+die "\n  [!] Error: Invalid adapter's sequence\n\n" if (!isdna($ca));
+die "\n  [!] Error: No minimum read length provided\n\n" if (!defined $cl);
+die "\n  [!] Error: Minimum read length should be an integer >= 10\n\n" if ($cl < 10);
+die "\n  [!] Error: Minimum adapter alignment should be an integer > 0\n\n" if ($cm < 1);
 die "\n  [!] Error: Parameters -ba and -bk are mutually exclusive\n\n" if ($bk > 1 &&
                                                                            $ba);
 die "\n  [!] Error: Parameter -n requires parameter -k\n\n" if ($nobam &&
@@ -262,9 +258,9 @@ if ($fastq) {
     elsif (!-e $bowtie) { die "\n  [!] Error: Bowtie doesn't exist\n\n"; }
     elsif (!-x $bowtie) { die "\n  [!] Error: Bowtie is not executable\n\n"; }
         
-    if (!defined $fastx) { die "\n  [!] Error: FASTX Clipper is not in PATH\n\n"; }
-    elsif (!-e $fastx) { die "\n  [!] Error: FASTX Clipper doesn't exist\n\n"; }
-    elsif (!-x $fastx) { die "\n  [!] Error: FASTX Clipper is not executable\n\n"; }
+    if (!defined $cutadapt) { die "\n  [!] Error: Cutadapt is not in PATH\n\n"; }
+    elsif (!-e $cutadapt) { die "\n  [!] Error: Cutadapt Clipper doesn't exist\n\n"; }
+    elsif (!-x $cutadapt) { die "\n  [!] Error: Cutadapt Clipper is not executable\n\n"; }
 
     die "\n  [!] Error: No Bowtie index provided\n\n" if (!defined $bi);
     
@@ -320,7 +316,7 @@ if ($fastq) { # Some of the provided files need to be mapped
         
             next if ($sample->{type} ne "FastQ");
             
-            $processmanager->enqueue( command => $fastx . " -a " . $fa . " -l " . $fl . " -M " . $fm . " -Q " . $fq . " -i " . $sample->{path} . " -o " . $tmpdir . $tmp . "_" . $sample->{file} . ".fq",
+            $processmanager->enqueue( command => $cutadapt . " -a " . $ca . " -m " . $cl . " -O " . $cm . " -o " . $tmpdir . $tmp . "_" . $sample->{file} . ".fq " . $sample->{path},
                                       id      => $sample->{file} );
         
             $sample->{path} = $tmpdir . $tmp . "_" . $sample->{file} . ".fq";
@@ -819,7 +815,7 @@ sub help {
                                            this causes the SAM files to be converted to BAM format.
  -n  or --no-bam                     Disables mapped SAM files conversion to BAM format (requires -k)
  -b  or --bowtie                     Path to Bowtie v1 executable (Default: assumes Bowtie is in PATH)
- -fx or --fastx                      Path to FASTX Clipper executable (Default: assumes FASTX Clipper is in PATH)
+ -c  or --cutadapt                   Path to Cutadapt executable (Default: assumes Cutadapt is in PATH)
  -s  or --samtools                   Path to SAMTools executable (Default: assumes SAMTools is in PATH)
  -r  or --sorted                     Assumes that the provided SAM/BAM files are already sorted lexicographically by
                                      transcript ID, and numerically by position
@@ -833,12 +829,11 @@ sub help {
                                      Note: Transcripts in this file must match transcripts in SAM/BAM file headers.
                                            This can be omitted if a Bowtie index is specified by -bi (or --bowtie-index).
  
- FASTX Clipper options
- -fa or --fastx-adapter              Sequence of 3' adapter for clipping (Default: TGGAATTCTCGGGTGCCAAGG)
- -fq or --fastx-qual                 FastQ files quality scale (33 [Default], or 64)
- -fl or --fastx-len                  Minimum length to keep reads after clipping (>=10, Default: 25)
- -fm or --fastx-min-align            Minimum alignment in nt to adapter's sequence (>5, Default: 10)
- -c  or --clipped                    Assumes that the provided FastQ files have been already clipped
+ Cutadapt options
+ -ca or --cutadapt-adapter           Sequence of 3' adapter for clipping (Default: TGGAATTCTCGGGTGCCAAGG)
+ -cl or --cutadapt-len               Minimum length to keep reads after clipping (>=10, Default: 25)
+ -cm or --cutadapt-min-align         Minimum alignment in nt to adapter's sequence (>0, Default: 1)
+ -cp or --clipped                    Assumes that the provided FastQ files have been already clipped
  
  Bowtie options
  -bn or --bowtie-n                   Use Bowtie mapper in -n mode (0-3 mismatches, Default: 2)

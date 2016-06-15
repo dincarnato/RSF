@@ -226,6 +226,14 @@ sub reset {
     
 }
 
+sub close {
+    
+    my $self = shift;
+    
+    if (defined $self->{_fh}) { CORE::close($self->{_fh}) if (fileno($self->{_fh})); }
+    
+}
+
 sub DESTROY {
     
     my $self = shift;
@@ -233,7 +241,7 @@ sub DESTROY {
     delete($self->{file});
     delete($self->{data});
     
-    if (defined $self->{_fh}) { close($self->{_fh}) if (fileno($self->{_fh})); }
+    $self->close();
     
 }
 

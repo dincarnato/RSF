@@ -1,6 +1,7 @@
 package RSF::Data::IO::RTC;
 
 use strict;
+use Core::Utils;
 use Fcntl qw(SEEK_SET SEEK_END);
 use RSF::Data::RTC;
 
@@ -11,7 +12,8 @@ our (%bases);
 BEGIN {
     
     my $i = 5;
-    %bases = map { --$i => $_ } qw(N T G C A);
+    %bases = map { --$i => $_,
+                   $_   => $i } qw(N T G C A);
     
 }
 
@@ -21,16 +23,16 @@ sub new {
     my %parameters = @_ if (@_);
     
     my $self = $class->SUPER::new(%parameters);
-    $self->_init({ index      => undef,
-                   buildindex => 0,
-                   _offsets   => {} }, \%parameters);
+    $self->_init({ index       => undef,
+                   buildindex  => 0,
+                   _offsets    => {} }, \%parameters);
     
     $self->_openfh();
     
     binmode($self->{_fh});
     
     $self->_validate();
-    $self->_loadindex();
+    $self->_loadindex() if ($self->mode() eq "r");
         
     return($self);
     
@@ -45,12 +47,16 @@ sub _validate {
     
     $self->SUPER::_validate();
     
-    seek($fh, -8, SEEK_END);
-    read($fh, $eof, 8);
-
-    $self->throw("Invalid RTC file (EOF marker is absent)") unless ($eof eq "\x5b\x65\x6f\x66\x72\x74\x63\x5d");
+    if ($self->mode() eq "r") {
     
-    $self->reset();
+        seek($fh, -8, SEEK_END);
+        read($fh, $eof, 8);
+    
+        $self->throw("Invalid RTC file (EOF marker is absent)") unless ($eof eq "\x5b\x65\x6f\x66\x72\x74\x63\x5d");
+        
+        $self->reset();
+        
+    }
     
     $self->{index} = $self->{file} . ".rti" if ($self->{buildindex} &&
                                                 defined $self->{file} &&
@@ -212,6 +218,90 @@ sub read {
                                   coverage => \@coverage );
     
     return($entry);
+    
+}
+
+sub write {
+    
+    my $self = shift;
+    my @sequences = @_ if (@_);
+    
+    $self->throw("Filehandle isn't in write mode") unless ($self->mode() =~ m/^w$/);
+    
+    foreach my $sequence (@sequences) {
+    
+        if (!blessed($sequence) ||
+            !$sequence->isa("RSF::Data::RTC")) {
+            
+            $self->warn("Method requires a valid RSF::Data::RTC object");
+            
+            next;
+            
+        }
+    
+        my ($fh, $id, $seq, $length,
+            @rtstops, @coverage);
+        $fh = $self->{_fh};
+        $id = $sequence->id();
+        $seq = join("", map{sprintf("%x", $bases{$_})} split(//, $sequence->sequence()));
+        $length = length($seq);
+        @rtstops = $sequence->rtstops();
+        @coverage = $sequence->coverage();
+    
+        if (!defined $seq ||
+            !defined $id ||
+            !@rtstops ||
+            !@coverage) {
+            
+            $self->warn("Empty RSF::Data::RTC object");
+            
+            next;
+            
+        }
+    
+        print $fh pack("L<", length($id) + 1) .             # len_transcript_id (uint32_t)
+                  $id . "\0" .                              # transcript_id (char[len_transcript_id])
+                  pack("L<", length($seq)) .                # len_seq (uint32_t)
+                  pack("H*", $seq) .                        # seq (uint8_t[(len_seq+1)/2])
+                  pack("L<*", @rtstops, @coverage);         # stops, cov (uint32_t[len_seq x 2])
+                  
+        $self->{_offsets}->{$id} = 4 * ($length * 2 + 2) + length($id) + 1 + ($length + ($length % 2)) / 2 if ($self->{buildindex});
+        
+    }
+    
+}
+
+sub close {
+    
+    my $self = shift;
+    
+    if ($self->mode() =~ m/^w$/) {
+    
+        my $fh = $self->{_fh};
+        
+        print $fh "\x5b\x65\x6f\x66\x72\x74\x63\x5d";
+        
+        if ($self->{buildindex} &&
+            defined $self->{index}) {
+            
+            open(my $ih, ">:raw", $self->{index}) or $self->throw("Unable to write RTC index (" . $! . ")");
+            select((select($ih), $|=1)[0]);
+            
+            foreach my $id (sort {$self->{_offsets}->{$a} <=> $self->{_offsets}->{$b}} keys %{$self->{_offsets}}) {
+                
+                print $ih pack("L<", length($id) + 1) .                 # len_transcript_id (uint32_t)
+                          $id . "\0" .                                  # transcript_id (char[len_transcript_id])
+                          pack("L<", $self->{_offsets}->{$id});         # offset in count table (uint32_t)
+                          
+            }
+            
+            close($ih);
+            
+        }
+        
+    }
+    
+    $self->SUPER::close();
     
 }
 
