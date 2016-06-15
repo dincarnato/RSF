@@ -317,7 +317,8 @@ if ($fastq) { # Some of the provided files need to be mapped
             next if ($sample->{type} ne "FastQ");
             
             $processmanager->enqueue( command => $cutadapt . " -a " . $ca . " -m " . $cl . " -O " . $cm . " -o " . $tmpdir . $tmp . "_" . $sample->{file} . ".fq " . $sample->{path},
-                                      id      => $sample->{file} );
+                                      id      => $sample->{file},
+                                      stdout  => "/dev/null" );
         
             $sample->{path} = $tmpdir . $tmp . "_" . $sample->{file} . ".fq";
         
