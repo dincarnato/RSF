@@ -57,6 +57,7 @@ $threads = 1;
 $decimals = 3;
 $scoremethod = 1;
 $normmethod = 1;
+$nan = 1;
 
 do {
     
@@ -81,7 +82,7 @@ do {
                 "i|index=s"             => \$index,
                 "d|decimals=i"          => \$decimals,
                 "p|processors=i"        => \$threads,
-                "n|nan"                 => \$nan,
+                "n|nan=i"               => \$nan,
                 "rm|remap-reactivities" => \$remap ) or help(1);
 
 };
@@ -94,6 +95,7 @@ if (!$winoffset) { $winoffset = $scoremethod =~ m/^Ding|1$/i ? 1e9 : 50; }
 die "\n  [!] Error: Number of processors must be an integer greater than 0\n\n" if ($threads < 1);
 die "\n  [!] Error: Decimals value must be an integer comprised between 1 and 10\n\n" if ($decimals < 1 ||
                                                                                           $decimals > 10);
+die "\n  [!] Error: Coverage threshold for reporting positions as NaN must be an integer greater than 0" if ($nan < 1);
 
 print "\n[+] Parsing configuration...";
 
@@ -375,12 +377,12 @@ sub norm {
         if ($nan) {
             
             my @tcov = $tentry->coverage();
-            @norm = map { $tcov[$_] ? $norm[$_] : undef } 0 .. $#tcov;
+            @norm = map { $tcov[$_] >= $nan ? $norm[$_] : undef } 0 .. $#tcov;
             
             if ($hasctrl) {
                 
                 my @ucov = $tentry->coverage();
-                @norm = map { $ucov[$_] ? $norm[$_] : undef } 0 .. $#ucov;
+                @norm = map { $ucov[$_] >= $nan ? $norm[$_] : undef } 0 .. $#ucov;
                 
             }
             
@@ -582,7 +584,8 @@ sub help {
  -mc or --mean-coverage              Discards any transcript with mean coverage below this threshold (>=0, Default: 1)
  -ec or --median-coverage            Discards any transcript with median coverage below this threshold (>=0, Default: 1)
  -d  or --decimals                   Number of decimals for reporting reactivities (1-10, Default: 3)
- -n  or --nan                        Non-covered transcript positions will be reported as NaN in the reactivity profile
+ -n  or --nan                        Transcript positions with reads coverage behind this threshold will be reported as NaN in
+                                     the reactivity profile (Default: 1)
  
  Scoring method #1 options (Ding et al., 2014)
  -pc or --pseudocount                Pseudocount added to reactivities to avoid division by 0 (>0, Default: 1)
