@@ -175,9 +175,6 @@ else { # RNAstructure
     if (!defined $rnastructure) { die "\n\n  [!] Error: RNAstructure Fold is not in PATH\n\n"; }
     elsif (!-e $rnastructure) { die "\n\n  [!] Error: RNAstructure Fold doesn't exist\n\n"; }
     elsif (!-x $rnastructure) { die "\n\n  [!] Error: RNAstructure Fold is not executable\n\n"; }
-    
-    if (!-e $Bin . "/spd2shape") { die "\n\n  [!] Error: SPD2Shape utility doesn't exist\n\n"; }
-    elsif (!-x $Bin . "/spd2shape") { die "\n\n  [!] Error: SPD2Shape utility is not executable\n\n"; }
 
     $ENV{DATAPATH} = $data;
     $t += 273.15; # RNAstructure expects a temperature in Kelvin degrees
