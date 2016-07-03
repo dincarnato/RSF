@@ -19,6 +19,7 @@ use strict;
 use Config;
 use Cwd;
 use File::Path qw(mkpath rmtree);
+use File::Spec;
 use FindBin qw($Bin);
 use Getopt::Long qw(:config no_ignore_case);
 use threads;
@@ -29,6 +30,7 @@ use lib $Bin . "/lib";
 
 use Core::Utils;
 use Core::Mathematics qw(:all);
+use Core::Threads::Utils;
 use Data::IO::Sequence;
 use Data::IO::XML;
 use Data::Sequence::Utils;
@@ -110,7 +112,7 @@ die "\n  [!] Error: Invalid reactive bases\n\n" if ($keepbases !~ m/^all$/i &&
                                                     !isiupac($keepbases));
 
 $output =~ s/\/?$/\//;
-$keepbases = $keepbases =~ m/^all$/i ? "ACGT" : join("", sort(uniq(iupac2nt(rna2dna($keepbases)))));
+$keepbases = $keepbases =~ m/^all$/i ? "ACGU" : dna2rna(join("", sort(uniq(iupac2nt(rna2dna($keepbases))))));
 $scoring = $method == 1 ? "ViennaRNA" : ($method == 2 ? "RNAstructure" : "Combined");
 
 $SIG{__DIE__} = \&cleanup;
@@ -182,6 +184,9 @@ if (!-e $tmpdir) {
     
 }
 else { die "\n\n  [!] Error: The path to the specified temporary folder is not a directory\n\n" if (!-d $tmpdir); }
+
+$output = File::Spec->rel2abs($output) . "/";
+$tmpdir = File::Spec->rel2abs($tmpdir) . "/";
 
 $io = Data::IO::Sequence->new(file => $multifasta);
 
@@ -308,24 +313,21 @@ sub partition {
         $tmpid, @vienna, @rnastructure, @mean);
     $cwd = cwd();
     $tmpid = $tmp . "_" . $id;
-    $tmpseq = $tmpid . ".fa";
+    $tmpseq = $tmpdir . $tmpid;
     @vienna = (0) x length($winseq) if ($method =~ m/^[13]$/);
     @rnastructure = (0) x length($winseq) if ($method =~ m/^[23]$/);
     
     chdir($tmpdir);
     
-    # Writes temporary sequence
-    open(my $wh, ">", $tmpseq) or return();
-    print $wh ">" . $tmpid . "\n" . $winseq;
-    close($wh);
+    return unless(seq2fasta($tmpseq, $tmpid, $winseq));
     
     if ($method =~ m/^[13]$/) { # ViennaRNA
     
-        $cmd = $viennarna . " -p -i " . $tmpseq . " -T " . $t;
+        $cmd = $viennarna . " -p -i " . $tmpseq . ".fa -T " . $t;
         $cmd .= " --maxBPspan=" . $maxdist if ($maxdist);
         $ret = `$cmd --noPS 2>&1`;
         
-        open(my $fh, "<", $tmpid . "_dp.ps") or return();
+        open(my $fh, "<", $tmpdir . $tmpid . "_dp.ps") or return();
         while(<$fh>) {
             
             if ($_ =~ m/^(\d+) (\d+) ([\d\.]+) ubox$/) {
@@ -345,8 +347,8 @@ sub partition {
     
     if ($method =~ m/^[23]$/) { # RNAstructure
         
-        my $pfs = $tmp . "_" . $id . ".pfs";
-        $cmd = $partition . " " . $tmpseq . " " . $pfs;
+        my $pfs = $tmpdir . $tmp . "_" . $id . ".pfs";
+        $cmd = $partition . " " . $tmpseq . ".fa " . $pfs;
         $cmd .= " -t " . ($t + 273.15);
         $cmd .= " -md " . $maxdist if ($maxdist);
         $ret = `$cmd 2>&1`;
@@ -376,7 +378,7 @@ sub partition {
         
     }
     
-    unlink(glob($tmp . "_" . $id . "*"));
+    unlink(glob($tmpdir . $tmp . "_" . $id . "*"));
     
     chdir($cwd);
     
@@ -385,6 +387,30 @@ sub partition {
     else { @mean = map { 1 - mean($vienna[$_], $rnastructure[$_]) } (0 .. $#vienna); }
     
     return(@mean);
+    
+}
+
+sub seq2fasta {
+    
+    my ($file, $id, $sequence) = @_;
+    
+    eval {
+        
+        my ($io, $fasta);
+        $io = Data::IO::Sequence->new( file   => $file . ".fa",
+                                       mode   => "w",
+                                       flush  => 1,
+                                       format => "fasta" );
+        $fasta = Data::Sequence->new( id       => $id,
+                                      sequence => $sequence );
+        
+        $io->write($fasta);
+        
+    };
+    
+    if ($@) { return(); }
+    
+    return(1);
     
 }
 
