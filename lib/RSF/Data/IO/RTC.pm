@@ -25,7 +25,8 @@ sub new {
     my $self = $class->SUPER::new(%parameters);
     $self->_init({ index       => undef,
                    buildindex  => 0,
-                   _offsets    => {} }, \%parameters);
+                   _offsets    => {},
+                   _lastoffset => 0 }, \%parameters);
     
     $self->_openfh();
     
@@ -264,8 +265,13 @@ sub write {
                   pack("L<", length($seq)) .                # len_seq (uint32_t)
                   pack("H*", $seq) .                        # seq (uint8_t[(len_seq+1)/2])
                   pack("L<*", @rtstops, @coverage);         # stops, cov (uint32_t[len_seq x 2])
-                  
-        $self->{_offsets}->{$id} = 4 * ($length * 2 + 2) + length($id) + 1 + ($length + ($length % 2)) / 2 if ($self->{buildindex});
+        
+        if ($self->{buildindex}) {
+             
+            $self->{_offsets}->{$id} = $self->{_lastoffset};
+            $self->{_lastoffset} += 4 * ($length * 2 + 2) + length($id) + 1 + ($length + ($length % 2)) / 2;
+            
+        }
         
     }
     
