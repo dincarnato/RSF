@@ -500,10 +500,10 @@ foreach my $sample (@tmp) {
     }
     close($fh);
     
-    warn "\n\n  [!] Warning: Only " . $inheader . "/" . keys(%transcripts) . " reference transcripts are present in sample \"" - $sample->{file} - "\" header." .
+    warn "\n\n  [!] Warning: Only " . $inheader . "/" . keys(%transcripts) . " reference transcripts are present in sample \"" . $sample->{file} . "\" header." .
          "\n               All transcripts absent in reference will be skipped.\n\n" if ($inheader != keys(%transcripts));
          
-    die "\n\n  [!] Error: All transcripts in sample \"" - $sample->{file} - "\" header are absent in reference." .
+    die "\n\n  [!] Error: All transcripts in sample \"" . $sample->{file} . "\" header are absent in reference." .
         "\n             Please re-map your dataset using the same reference, or provide a different reference by the -bi (or --bowtie-index) parameter.\n\n" unless($inheader);
     
 }
