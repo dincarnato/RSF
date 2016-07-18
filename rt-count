@@ -562,7 +562,7 @@ if ($fastq < @tmp) {
             
             my $path = $keep ? $output . ($nobam ? "SAM/" : "BAM/") . $sample->{file} . ($nobam ? ".sam" : ".bam") : $tmpdir . $tmp . "_" . $sample->{file} . "_sorted.sam";
             
-            $processmanager->enqueue( command => $samtools . " sort -O " . ($nobam ? "sam" : "bam") . " -T " . $tmpdir . $tmp . "_" . $sample->{file} . " -o " . $path . " " . $sample->{path},
+            $processmanager->enqueue( command => $samtools . " sort --threads " . $wt . " -O " . ($nobam ? "sam" : "bam") . " -T " . $tmpdir . $tmp . "_" . $sample->{file} . " -o " . $path . " " . $sample->{path},
                                       id      => $sample->{file} );
 
             $sample->{path} = $path;
