@@ -121,8 +121,10 @@ $installed = ExtUtils::Installed->new();
 ##
 
 die "\n  [!] Error: No output directory specified\n\n" unless(defined $output);
-die "\n  [!] Error: No SPD directory\/file specified\n\n" unless(defined $input);
-die "\n  [!] Error: Provided SPD directory\/file doesn't exist\n\n" if (!-e $input);
+die "\n  [!] Error: No SPD directory\/file specified\n\n" if (!$ignore &&
+                                                              !defined $input);
+die "\n  [!] Error: Provided SPD directory\/file doesn't exist\n\n" if (!$ignore &&
+                                                                        !-e $input);
 die "\n  [!] Error: Number of processors must be an integer greater than 0\n\n" if ($threads < 1);
 die "\n  [!] Error: Invalid folding method\n\n" unless($method =~ m/^[12]$/);
 die "\n  [!] Error: Temperature must be a positive value\n\n" unless(ispositive($t));
@@ -213,30 +215,35 @@ die "\n\n  [!] Error: Unable to create output directory (" . $error->[0]->{each(
 $queue = Thread::Queue->new();
 @pool = map{ threads->create(\&fold, $queue) } 1 .. $threads;
 
-print "\n[+] Importing SPD file(s) [0 imported]";
+if (!$ignore) {
 
-if (-d $input) {
+    print "\n[+] Importing SPD file(s) [0 imported]";
     
-    opendir(my $dh, $input) or die "\n\n  [!] Error: Unable to read SPD files from directory\n\n";
-    while(my $file = readdir($dh)) {
+    if (-d $input) {
         
-        next if ($file !~ m/\.spd$/);
+        opendir(my $dh, $input) or die "\n\n  [!] Error: Unable to read SPD files from directory\n\n";
+        while(my $file = readdir($dh)) {
+            
+            next if ($file !~ m/\.spd$/);
+            
+            push(@spd, $input . "/" . $file);
+            print CLRRET . "[+] Importing SPD file(s) [" . scalar(@spd) . " imported]";
+            
+        }
+        closedir($dh);
         
-        push(@spd, $input . "/" . $file);
-        print CLRRET . "[+] Importing SPD file(s) [" . scalar(@spd) . " imported]";
+        die "\n\n  [!] Error: Specified folder doesn't contain any SPD file\n\n" unless(@spd);
         
     }
-    closedir($dh);
+    else { # Single SPD file
     
-    die "\n\n  [!] Error: Specified folder doesn't contain any SPD file\n\n" unless(@spd);
+        print CLRRET . "[+] Importing SPD file(s) [1 imported]";    
+        push(@spd, $input);
+        
+    }
     
 }
-else { # Single SPD file
-
-    print CLRRET . "[+] Importing SPD file(s) [1 imported]";    
-    push(@spd, $input);
-    
-} 
+else { warn "\n\n  [!] Ignoring SPD data files. Predicting MFE unconstrained structures...\n"; }
 
 print "\n[+] Building RNA structurome [Last: none]";
 
@@ -514,7 +521,7 @@ sub help {
  -sl or --slope                      Sets slope used with structural probing data restraints (Default: 1.8 [kcal/mol])
  -in or --intercept                  Sets intercept used with structural probing data restraints (Default: -0.6 [kcal/mol])
  -md or --maximum-distance           Sets the maximum pairing distance in nucleotides between transcript's residues (Default: 0 [No limit])
- -i  or --ignore-reactivity          Do not use SPD files data to guide folding (pure MFE prediction)
+ -i  or --ignore-reactivity          Do not use SPD files data to guide folding (MFE unconstrained prediction)
  
  Folding method #1 options (ViennaRNA)
  -v   or --viennarna                 Path to ViennaRNA RNAfold executable (Default: assumes RNAfold is in PATH)
