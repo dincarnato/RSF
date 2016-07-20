@@ -294,7 +294,7 @@ sub fold { # Threads
         
         $sequence =~ s/\s+?//g;
         $reactivity =~ s/\s+?//g;
-        $sequence = dna2rna($spdref->{transcript}->{sequence});
+        $sequence = dna2rna($sequence);
         @reactivity = split(/,/, $reactivity);
         $tmp = $tmpdir . $id . "_" . threads->tid();
         
