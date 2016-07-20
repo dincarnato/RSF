@@ -26,6 +26,7 @@ use Getopt::Long qw(:config no_ignore_case);
 use threads;
 use threads::shared;
 use Thread::Queue;
+use XML::LibXML;
 
 use lib $Bin . "/lib";
 
@@ -265,8 +266,7 @@ print "\n\n[+] All done.\n\n";
 sub fold { # Threads
     
     my $queue = shift;
-    
-    require XML::LibXML;
+
     require RNA;
     
     while(my $spd = $queue->dequeue()) {
