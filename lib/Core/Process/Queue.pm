@@ -107,11 +107,13 @@ sub waitall {
     
     my $self = shift;
     
-    $self->throw("No running process") unless(values %{$self->{_processes}});
+    if (values %{$self->{_processes}}) {
     
-    $_->wait() for (values %{$self->{_processes}});
-    
-    $self->{_children} = 0;
+        $_->wait() for (values %{$self->{_processes}});
+        
+        $self->{_children} = 0;
+        
+    }
     
 }
 
