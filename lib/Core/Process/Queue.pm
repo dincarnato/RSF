@@ -68,34 +68,38 @@ sub start {
     
     $self->throw("Processors number must be a positive integer >= 1") if (!isint($processors) ||
                                                                           $processors < 1);
-    $self->throw("Empty queue") unless(@{$self->{_queue}});
     
-    $self->throw("Cannot start while executing another queue") if ($self->{_children});
+    if (!@{$self->{_queue}}) { $self->warn("Empty queue"); }
+    else {
     
-    undef($self->{processes});
-    
-    while (my $parameters = shift(@{$self->{_queue}})) {
-
-        if ($self->{_children} == $processors) {
+        $self->throw("Cannot start while executing another queue") if ($self->{_children});
         
-            my $pid = wait();
-            $self->{_processes}->{$pid}->_closepair(); # Socket pair on parent's side needs to be closed once child exits
-            $self->{_children}--;
+        undef($self->{processes});
+        
+        while (my $parameters = shift(@{$self->{_queue}})) {
+    
+            if ($self->{_children} == $processors) {
             
-        } 
-       
-        my $process = Core::Process->new( id      => $parameters->{id},
-                                          stdout  => $parameters->{stdout} || $self->{stdout},
-                                          stderr  => $parameters->{stderr} || $self->{stderr},
-                                          onstart => $self->{onstart},
-                                          onexit  => $self->{onexit} ); 
-        $process->start($parameters->{command}, @{$parameters->{arguments}});
+                my $pid = wait();
+                $self->{_processes}->{$pid}->_closepair(); # Socket pair on parent's side needs to be closed once child exits
+                $self->{_children}--;
+                
+            } 
+           
+            my $process = Core::Process->new( id      => $parameters->{id},
+                                              stdout  => $parameters->{stdout} || $self->{stdout},
+                                              stderr  => $parameters->{stderr} || $self->{stderr},
+                                              onstart => $self->{onstart},
+                                              onexit  => $self->{onexit} ); 
+            $process->start($parameters->{command}, @{$parameters->{arguments}});
+            
+            $self->{_processes}->{$process->pid()} = $process;
+            
+            $self->{_children}++;
+          
+        }
         
-        $self->{_processes}->{$process->pid()} = $process;
-        
-        $self->{_children}++;
-      
-    } 
+    }
     
 }
 

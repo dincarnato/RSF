@@ -296,7 +296,8 @@ else { die "\n  [!] Error: No FASTA file or Bowtie index provided\n\n"; }
 
 # Starts the process manager
 $processmanager = Core::Process::Queue->new( processors => $threads,
-                                             stderr     => "/dev/null" );
+                                             stderr     => "/dev/null",
+                                             verbosity  => -1 );
 
 ##
 # FastQ processing
