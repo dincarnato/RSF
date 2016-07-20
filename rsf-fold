@@ -266,15 +266,16 @@ sub fold { # Threads
     
     my $queue = shift;
     
-    require XML::LibXML::Simple;
+    require XML::LibXML;
     require RNA;
     
     while(my $spd = $queue->dequeue()) {
        
         my ($sequence, $id, $structure, $cmd,
-            $spdref, $tmp, $ret, @reactivity);
+            $spdref, $tmp, $ret, $reactivity,
+            @reactivity);
        
-        eval { $spdref = XML::LibXML::Simple::XMLin($spd); };
+        eval { $spdref = XML::LibXML->load_xml(location => $spd); };
         
         if ($@) {
 
@@ -287,11 +288,14 @@ sub fold { # Threads
             
         }
         
-        $spdref->{transcript}->{sequence} =~ s/\s+?//g;
-        $spdref->{transcript}->{reactivity} =~ s/\s+?//g;
-        $id = $spdref->{transcript}->{id};
+        $id = $spdref->findnodes("/data/transcript/\@id")->to_literal();
+        $sequence = $spdref->findnodes("/data/transcript/sequence")->to_literal();
+        $reactivity = $spdref->findnodes("/data/transcript/reactivity")->to_literal();
+        
+        $sequence =~ s/\s+?//g;
+        $reactivity =~ s/\s+?//g;
         $sequence = dna2rna($spdref->{transcript}->{sequence});
-        @reactivity = split(/,/, $spdref->{transcript}->{reactivity});
+        @reactivity = split(/,/, $reactivity);
         $tmp = $tmpdir . $id . "_" . threads->tid();
         
         if (spd2shape($tmp, \@reactivity)) { # Generates temporary SHAPE constraint file
