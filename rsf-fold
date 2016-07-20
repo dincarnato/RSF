@@ -51,7 +51,7 @@ my ($output, $ct, $input, $method,
     $maxdist, $constmethod, $constconversion, $beta,
     $modslope, $modintercept, $installed, $queue,
     $overwrite, $error, $help, $tmpdir,
-    @spd, @pool, %modules);
+    $ignore, @spd, @pool, %modules);
 
 $output = "structurome";
 $method = 1;
@@ -99,7 +99,8 @@ do {
                 "ms|model-slope=s"           => \$modslope,
                 "mi|model-intercept=s"       => \$modintercept,
                 "r|rnastructure=s"           => \$rnastructure,
-                "dp|data-path=s"             => \$data ) or help(1);
+                "dp|data-path=s"             => \$data,
+                "i|ignore-reactivity"        => \$ignore ) or help(1);
     
     $input = $ARGV[0];
 
@@ -318,20 +319,26 @@ sub fold { # Threads
        
         if ($method == 1) { # ViennaRNA
         
-            $cmd = $viennarna . " --noPS --shape='" . $tmp . ".shape' -i '" . $tmp . ".fa'";
+            $cmd = $viennarna . " --noPS -i '" . $tmp . ".fa'";
             
-            if ($constmethod == 1) {    # Zarringhalam et al., 2012 (ViennaRNA 'Z')
-                
-                $cmd .= " --shapeMethod=Z" . $beta . " --shapeConversion=";
-                
-                if ($constconversion == 1) { $cmd .= "S"; }                                             # ViennaRNA 'S'
-                elsif ($constconversion == 2) { $cmd .= "M"}                                            # ViennaRNA 'M'
-                elsif ($constconversion == 3) { $cmd .= "C" . $cutoff; }                                # ViennaRNA 'C'
-                elsif ($constconversion == 4) { $cmd .= "Ls" . $modslope . "i" . $modintercept; }       # ViennaRNA 'L'
-                else { $cmd .= "Os" . $modslope . "i" . $modintercept; }                                # ViennaRNA 'O'
+            if (!$ignore) {
+            
+                $cmd .= " --shape='" . $tmp . ".shape'";
+            
+                if ($constmethod == 1) {    # Zarringhalam et al., 2012 (ViennaRNA 'Z')
+                    
+                    $cmd .= " --shapeMethod=Z" . $beta . " --shapeConversion=";
+                    
+                    if ($constconversion == 1) { $cmd .= "S"; }                                             # ViennaRNA 'S'
+                    elsif ($constconversion == 2) { $cmd .= "M"}                                            # ViennaRNA 'M'
+                    elsif ($constconversion == 3) { $cmd .= "C" . $cutoff; }                                # ViennaRNA 'C'
+                    elsif ($constconversion == 4) { $cmd .= "Ls" . $modslope . "i" . $modintercept; }       # ViennaRNA 'L'
+                    else { $cmd .= "Os" . $modslope . "i" . $modintercept; }                                # ViennaRNA 'O'
+                    
+                }
+                else { $cmd .= " --shapeMethod=Dm" . $slope . "b" . $intercept; }  # Deigan et al., 2009 (ViennaRNA 'D')
                 
             }
-            else { $cmd .= " --shapeMethod=Dm" . $slope . "b" . $intercept; }  # Deigan et al., 2009 (ViennaRNA 'D')
             
             $cmd .= " --maxBPspan=" . $maxdist if ($maxdist);
             
@@ -342,7 +349,8 @@ sub fold { # Threads
         }
         elsif ($method == 2) { # RNAstructure
             
-            $cmd = $rnastructure . " '" . $tmp . ".fa' '" . $tmp . ".ct' -si " . $intercept . " -sm " . $slope . " -t " . $t . " -sh '" . $tmp . ".shape'";
+            $cmd = $rnastructure . " '" . $tmp . ".fa' '" . $tmp . ".ct' -t " . $t;
+            $cmd .= " -si " . $intercept . " -sm " . $slope . " -sh '" . $tmp . ".shape'" if (!$ignore);
             $cmd .= " -md " . $maxdist if ($maxdist);
             
             $ret = `$cmd 2>&1`;
@@ -506,6 +514,7 @@ sub help {
  -sl or --slope                      Sets slope used with structural probing data restraints (Default: 1.8 [kcal/mol])
  -in or --intercept                  Sets intercept used with structural probing data restraints (Default: -0.6 [kcal/mol])
  -md or --maximum-distance           Sets the maximum pairing distance in nucleotides between transcript's residues (Default: 0 [No limit])
+ -i  or --ignore-reactivity          Do not use SPD files data to guide folding (pure MFE prediction)
  
  Folding method #1 options (ViennaRNA)
  -v   or --viennarna                 Path to ViennaRNA RNAfold executable (Default: assumes RNAfold is in PATH)
