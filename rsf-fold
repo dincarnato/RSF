@@ -121,10 +121,8 @@ $installed = ExtUtils::Installed->new();
 ##
 
 die "\n  [!] Error: No output directory specified\n\n" unless(defined $output);
-die "\n  [!] Error: No SPD directory\/file specified\n\n" if (!$ignore &&
-                                                              !defined $input);
-die "\n  [!] Error: Provided SPD directory\/file doesn't exist\n\n" if (!$ignore &&
-                                                                        !-e $input);
+die "\n  [!] Error: No SPD directory\/file specified\n\n" if (!defined $input);
+die "\n  [!] Error: Provided SPD directory\/file doesn't exist\n\n" if (!-e $input);
 die "\n  [!] Error: Number of processors must be an integer greater than 0\n\n" if ($threads < 1);
 die "\n  [!] Error: Invalid folding method\n\n" unless($method =~ m/^[12]$/);
 die "\n  [!] Error: Temperature must be a positive value\n\n" unless(ispositive($t));
@@ -215,35 +213,32 @@ die "\n\n  [!] Error: Unable to create output directory (" . $error->[0]->{each(
 $queue = Thread::Queue->new();
 @pool = map{ threads->create(\&fold, $queue) } 1 .. $threads;
 
-if (!$ignore) {
+print "\n[+] Importing SPD file(s) [0 imported]";
 
-    print "\n[+] Importing SPD file(s) [0 imported]";
+if (-d $input) {
     
-    if (-d $input) {
+    opendir(my $dh, $input) or die "\n\n  [!] Error: Unable to read SPD files from directory\n\n";
+    while(my $file = readdir($dh)) {
         
-        opendir(my $dh, $input) or die "\n\n  [!] Error: Unable to read SPD files from directory\n\n";
-        while(my $file = readdir($dh)) {
-            
-            next if ($file !~ m/\.spd$/);
-            
-            push(@spd, $input . "/" . $file);
-            print CLRRET . "[+] Importing SPD file(s) [" . scalar(@spd) . " imported]";
-            
-        }
-        closedir($dh);
+        next if ($file !~ m/\.spd$/);
         
-        die "\n\n  [!] Error: Specified folder doesn't contain any SPD file\n\n" unless(@spd);
+        push(@spd, $input . "/" . $file);
+        print CLRRET . "[+] Importing SPD file(s) [" . scalar(@spd) . " imported]";
         
     }
-    else { # Single SPD file
+    closedir($dh);
     
-        print CLRRET . "[+] Importing SPD file(s) [1 imported]";    
-        push(@spd, $input);
-        
-    }
+    die "\n\n  [!] Error: Specified folder doesn't contain any SPD file\n\n" unless(@spd);
     
 }
-else { warn "\n\n  [!] Ignoring SPD data files. Predicting MFE unconstrained structures...\n"; }
+else { # Single SPD file
+
+    print CLRRET . "[+] Importing SPD file(s) [1 imported]";    
+    push(@spd, $input);
+    
+}
+    
+warn "\n\n  [!] Ignoring SPD data files. Predicting MFE unconstrained structures...\n" if ($ignore);
 
 print "\n[+] Building RNA structurome [Last: none]";
 
@@ -306,12 +301,16 @@ sub fold { # Threads
         @reactivity = split(/,/, $reactivity);
         $tmp = $tmpdir . $id . "_" . threads->tid();
         
-        if (spd2shape($tmp, \@reactivity)) { # Generates temporary SHAPE constraint file
-            
-            lock(%results);
-            $results{consterr}++;
-            
-            next;
+        if (!$ignore) {
+        
+            if (spd2shape($tmp, \@reactivity)) { # Generates temporary SHAPE constraint file
+                
+                lock(%results);
+                $results{consterr}++;
+                
+                next;
+                
+            }
             
         }
         
