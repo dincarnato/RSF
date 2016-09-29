@@ -137,6 +137,19 @@ die "\n  [!] Error: No lonely pairs parameter requires folding method 1 (ViennaR
 
 if ($constmethod == 1) { # Zarringhalam et al., 2012
     
+    if ($constconversion == 4) {
+        
+        $modslope = 0.68 if (!defined $modslope);
+        $modintercept = 0.2 if (!defined $modintercept);
+        
+    }
+    elsif ($constconversion == 5) {
+        
+        $modslope = 1.6 if (!defined $modslope);
+        $modintercept = -2.29 if (!defined $modintercept);
+        
+    }
+    
     die "\n  [!] Error: Invalid constraint conversion method\n\n" unless($method =~ m/^[1-5]$/);
     die "\n  [!] Error: Invalid beta factor value\n\n" if (!isnumeric($beta));
     die "\n  [!] Error: Constraining cutoff must be a positive value\n\n" if ($constconversion == 3 &&
