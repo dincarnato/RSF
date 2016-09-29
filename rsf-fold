@@ -285,6 +285,8 @@ sub fold { # Threads
 
     require RNA;
     
+    select(undef, undef, undef, threads->tid() / 100);
+    
     while(my $spd = $queue->dequeue()) {
        
         my ($sequence, $id, $structure, $cmd,
