@@ -126,8 +126,7 @@ sub summary {
         
     }
     
-    $table->row("Remap reactivities", $self->{remapreactivities}) if ($self->{normmethod} == 3);
-        
+    $table->row("Remap reactivities", $self->{remapreactivities});
     $table->row("Normalization window", $self->{normwindow});
     $table->row("Window sliding offset", $self->{windowoffset});
     $table->row("Reactive bases", $self->{reactivebases});
@@ -160,9 +159,8 @@ sub write {
         
     }
     
-    print $fh "remapReactivities=" . $self->{remapreactivities} . "\n" if ($self->{normmethod} == 3);
-    
-    print $fh "normWindow=" . $self->{normwindow} . "\n" .
+    print $fh "remapReactivities=" . $self->{remapreactivities} . "\n" .
+              "normWindow=" . $self->{normwindow} . "\n" .
               "windowOffset=" . $self->{windowoffset} . "\n" .
               "reactiveBases=" . $self->{reactivebases} . "\n" .
               "normIndependent=" . ($self->{normindependent} ? "yes" : "no") . "\n" .
