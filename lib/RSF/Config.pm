@@ -59,8 +59,8 @@ sub _validate {
     $self->throw("Invalid normMethod value") if ($self->{normmethod} !~ m/^(2-8\%|90\% Winsorising|Box-?plot|[123])$/i);
     $self->throw("2-8% normalization cannot be used with Rouskin scoring method") if ($self->{scoremethod} =~ m/^(Rouskin|2)$/i &&
                                                                                       $self->{normmethod} =~ m/^(2-8\%|1)$/i);
-    $self->throw("Box-plot normalization cannot be used with Rouskin scoring method") if ($self->{scoremethod} =~ m/^(Box-?plot|3)$/i &&
-                                                                                          $self->{normmethod} =~ m/^(90\% Winsorising|2)$/i);
+    $self->throw("Box-plot normalization cannot be used with Rouskin scoring method") if ($self->{scoremethod} =~ m/^(Rouskin|2)$/i &&
+                                                                                          $self->{normmethod} =~ m/^(Box-?plot|3)$/i);
     $self->throw("Invalid normWindow value") if (!isint($self->{normwindow}));
     $self->throw("normWindow value should be greater than or equal to 3") if ($self->{normwindow} < 3);
     $self->throw("Invalid windowOffset value") if (!isint($self->{windowoffset}) ||
