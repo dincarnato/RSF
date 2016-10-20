@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 ##
-# RT Count (v1.1.0)
+# RT Count (v1.2.0)
 # Epigenetics Unit @ HuGeF [Human Genetics Foundation]
 #
 # Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
@@ -52,8 +52,9 @@ my ($tmp, $tmpdir, $output, $keep,
     $bm, $nobam, $error, $fastq,
     $bam_trim5, $hex, $offset, $threads,
     $processmanager, $madetmp, $qcounter, $qresults,
-    $table, $bk, $cm, @bam_trim5, @tmp,
-    @pool, %transcripts, %bases, %spacer);
+    $table, $bk, $cm, $mutcount, @bam_trim5,
+    @tmp, @pool, %transcripts, %bases,
+    %spacer);
 
 $tmp = randalphanum(0xf);
 $tmpdir = "/tmp/";
@@ -106,7 +107,8 @@ do {
                 "r|sorted"                => \$sorted,
                 "p|processors=i"          => \$threads,
                 "f|fasta=s"               => \$multifasta,
-                "cm|cutadapt-min-align=i" => \$cm ) or help(1);
+                "cm|cutadapt-min-align=i" => \$cm,
+                "m|count-mutations"       => \$mutcount ) or help(1);
 
 };
 
@@ -166,6 +168,9 @@ else {
 }
 
 $SIG{__DIE__} = \&cleanup;
+
+print "\n  [!] Warning: Mutations count mode has been enabled. This is an experimental method." .
+      "\n               Please report any bug to: danny.incarnato[at]hugef-torino.org\n" if ($mutcount);
 
 print "\n[+] Making output directory...";
 
@@ -581,7 +586,7 @@ if ($fastq < @tmp) {
 
 }
 
-print "\n[+] Calculating per-base RT-stops and coverage. This may take a while...\n";
+print "\n[+] Calculating per-base " . ($mutcount ? "mutation counts" : "RT-stops") . " and coverage. This may take a while...\n";
 
 $qcounter = Thread::Queue->new();
 $qresults = Thread::Queue->new();
@@ -653,23 +658,36 @@ sub count {
                 
             }
             
-            if ($row[3] >= 2 + $sample->{trim5}) {
-    
-                $row[3] -= $sample->{trim5};
-                $stops[($row[3] - 2)]++;
+            if ($mutcount) {  # Mutations count mode
                 
-                map {$coverage[$_]++} ($row[3] - 2 < 0 ? 0 : $row[3] - 2) ..
+                $stops[$_]++ for (parsemd($row));
+                
+                map {$coverage[$_]++} ($row[3] - 1 < 0 ? 0 : $row[3] - 1) ..
                                        ($row[3] + length($row[9]) - 1 > $transcripts{$row[2]}->{length} - 1 ? $transcripts{$row[2]}->{length} - 1 : $row[3] + length($row[9]) - 1);
-    
-                #for my $i ($row[3] - 2 .. $row[3] + length($row[9]) - 1) {
-                #
-                #    next if ($i < 0);                                       # In case the actual 5'-end of transcript starts before the annotated one
-                #    last if ($i > $transcripts{$row[2]}->{length} - 1);     # In case the actual 3'-end of transcript ends after the annotated one
-                #
-                #    $coverage[$i]++;
-                #
-                #}
-    
+                
+                
+            }
+            else {  # RT-stops count mode
+            
+                if ($row[3] >= 2 + $sample->{trim5}) {
+        
+                    $row[3] -= $sample->{trim5};
+                    $stops[($row[3] - 2)]++;
+                    
+                    map {$coverage[$_]++} ($row[3] - 2 < 0 ? 0 : $row[3] - 2) ..
+                                           ($row[3] + length($row[9]) - 1 > $transcripts{$row[2]}->{length} - 1 ? $transcripts{$row[2]}->{length} - 1 : $row[3] + length($row[9]) - 1);
+        
+                    #for my $i ($row[3] - 2 .. $row[3] + length($row[9]) - 1) {
+                    #
+                    #    next if ($i < 0);                                       # In case the actual 5'-end of transcript starts before the annotated one
+                    #    last if ($i > $transcripts{$row[2]}->{length} - 1);     # In case the actual 3'-end of transcript ends after the annotated one
+                    #
+                    #    $coverage[$i]++;
+                    #
+                    #}
+        
+                }
+                
             }
             
         }
@@ -789,13 +807,65 @@ sub guess_type {
     
 }
 
+sub parsemd { # SAM MD flag parser
+    
+    my ($md, $llen, @row, @pos);
+    @row = split(/\t/, $_[0]);
+    $llen = $row[3];
+    
+    return if (@row < 11);
+    
+    for (10 .. $#row) { if ($row[$_] =~ m/^MD:Z:(.+)$/) { $md = $1; } }
+    
+    return if (!defined $md);
+    
+    while($md =~ m/^(\d+)/) {
+        
+        my ($len, $next);
+        $len = $1;
+        $md =~ s/^$len//;
+        
+        while(substr($md, 0, 1) =~ m/^\D$/) {
+            
+            $next = substr($md, 0, 1);
+        
+            if ($next eq "^") { # Deletion
+                
+                $md =~ s/^\^//;
+                $md =~ m/^([ACGNT]+)/;
+                
+                my $del = $1;
+                $len += length($del);
+                
+                $md =~ s/^$del//;
+                
+            }
+            elsif ($next =~ m/^[ACGNT]$/) {
+                
+                push(@pos, $len + $llen - 1);
+                $md =~ s/^$next//;
+                
+                $len++;
+                
+            }
+            
+        }
+        
+        $llen += $len;
+        
+    }
+    
+    return(@pos);
+    
+}
+
 sub help {
     
     print "\n  [!] Error: Invalid option. Please check the help\n" if ($_[0]);
     
     die <<HELP;
  
- RT Count (v1.1.0)
+ RT Count (v1.2.0)
  Epigenetics Units @ HuGeF [Human Genetics Foundation]
  Group leader: Prof. Salvatore Oliviero
     
@@ -830,6 +900,7 @@ sub help {
  -f  or --fasta                      Path to a FASTA file containing the reference transcripts
                                      Note: Transcripts in this file must match transcripts in SAM/BAM file headers.
                                            This can be omitted if a Bowtie index is specified by -bi (or --bowtie-index).
+ -m  or --count-mutations            *Experimental*: Enables mutations count instead of RT-stops count (for SHAPE-MaP/RING-MaP)
  
  Cutadapt options
  -ca or --cutadapt-adapter           Sequence of 3' adapter for clipping (Default: TGGAATTCTCGGGTGCCAAGG)

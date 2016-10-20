@@ -37,6 +37,7 @@ sub new {
                    meancoverage      => 1,
                    mediancoverage    => 1,
                    remapreactivities => 0,
+                   maxuntreatedmut   => 0.05,
                    autowrite         => 1 }, \%parameters); 
     
     $self->_validate();
@@ -54,8 +55,12 @@ sub _validate {
     
     my $self = shift;
 
-    $self->throw("Invalid scoreMethod value") if ($self->{scoremethod} !~ m/^Ding|Rouskin|[12]$/i);
+    $self->throw("Invalid scoreMethod value") if ($self->{scoremethod} !~ m/^Ding|Rouskin|Siegfried|[123]$/i);
     $self->throw("Invalid normMethod value") if ($self->{normmethod} !~ m/^(2-8\%|90\% Winsorising|Box-?plot|[123])$/i);
+    $self->throw("2-8% normalization cannot be used with Rouskin scoring method") if ($self->{scoremethod} =~ m/^Rouskin|2$/i &&
+                                                                                      $self->{normmethod} =~ m/^2-8\%|1$/i);
+    $self->throw("Box-plot normalization cannot be used with Rouskin scoring method") if ($self->{scoremethod} =~ m/^Box-?plot|3$/i &&
+                                                                                          $self->{normmethod} =~ m/^90\% Winsorising|2$/i);
     $self->throw("Invalid normWindow value") if (!isint($self->{normwindow}));
     $self->throw("normWindow value should be greater than or equal to 3") if ($self->{normwindow} < 3);
     $self->throw("Invalid windowOffset value") if (!isint($self->{windowoffset}) ||
@@ -73,6 +78,8 @@ sub _validate {
     $self->throw("Invalid medianCoverage value") if (!ispositive($self->{mediancoverage}));
     $self->throw("remapReactivities value must be boolean") if ($self->{remapreactivities} !~ m/^TRUE|FALSE|yes|no|[01]$/i);
     $self->throw("Automatic configuration file writing must be boolean") if ($self->{autowrite} !~ m/^[01]$/);
+    $self->throw("Invalid maxUntreatedMut value") if (!ispositive($self->{maxuntreatedmut}));
+    $self->throw("maxUntreatedMut value should be lower than or equal to 1") if ($self->{maxuntreatedmut} > 1);
     
 }
 
@@ -80,7 +87,7 @@ sub _fixproperties {
     
     my $self = shift;
     
-    $self->{scoremethod} = $self->{scoremethod} =~ m/^Ding|1$/i ? 1 : 2;
+    $self->{scoremethod} = $self->{scoremethod} =~ m/^Ding|1$/i ? 1 : ($self->{scoremethod} =~ m/^Rouskin|2$/i ? 2 : 3);
     $self->{normmethod} = $self->{normmethod} =~ m/^2-8\%|1$/ ? 1 : ($self->{normmethod} =~ m/^(90\% Winsorising|2)$/i ? 2 : 3);
     $self->{reactivebases} = $self->{reactivebases} =~ m/^all$/i ? "ACGT" : join("", sort(uniq(iupac2nt(rna2dna($self->{reactivebases})))));
     $self->{normindependent} = $self->{normindependent} =~ m/^TRUE|yes|1$/i ? 1 : 0;
@@ -88,7 +95,7 @@ sub _fixproperties {
     
 }
 
-sub scoremethod { return($_[1] ? ($_[0]->{scoremethod} == 1 ? "Ding" : "Rouskin") : $_[0]->{scoremethod}); }
+sub scoremethod { return($_[1] ? ($_[0]->{scoremethod} == 1 ? "Ding" : ($_[0]->{scoremethod} == 2 ? "Rouskin" : "Siegfried")) : $_[0]->{scoremethod}); }
 
 sub normmethod { return($_[1] ? ($_[0]->{normmethod} == 1 ? "2-8\%" : ($_[0]->{normmethod} == 2 ? "90\% Winsorising" : "Box-plot")) : $_[0]->{normmethod}); }
 
@@ -110,6 +117,8 @@ sub mediancoverage { return($_[0]->{mediancoverage}); }
 
 sub remapreactivities { return($_[0]->{remapreactivities}); }
 
+sub maxuntreatedmut { return($_[0]->{maxuntreatedmut}); }
+
 sub summary {
     
     my $self = shift;
@@ -123,6 +132,11 @@ sub summary {
         
         $table->row("Pseudocount", $self->{pseudocount});
         $table->row("Maximum score", $self->{maxscore});
+        
+    }
+    elsif ($self->{scoremethod} == 3) { # Siegfried
+        
+        $table->row("Maximum untreated sample mutation rate", $self->{maxuntreatedmut});
         
     }
     
@@ -149,13 +163,18 @@ sub write {
     
     open(my $fh, ">", $file) or $self->throw("Unable to write configuration file \"" . $file . "\" (" . $! . ")");
     
-    print $fh "scoreMethod=" . ($self->{scoremethod} == 1 ? "Ding" : "Rouskin") . "\n" .
-              "normMethod=" . ($self->{normmethod} == 1 ? "2-8\%" : ($self->{normmethod} == 2 ? "90\% Winsorising" : "Box-plot")) . "\n";
+    print $fh "scoreMethod=" . $self->scoremethod(1) . "\n" .
+              "normMethod=" . $self->normmethod(1) . "\n";
     
     if ($self->{scoremethod} == 1) { # Ding
         
         print $fh "pseudoCount=" . $self->{pseudocount} . "\n" .
                   "maxScore=" . $self->{maxscore} . "\n";
+        
+    }
+    elsif ($self->{scoremethod} == 3) { # Siegfried
+        
+        print $fh "maxUntreatedMut=" . $self->{maxuntreatedmut} . "\n";
         
     }
     
