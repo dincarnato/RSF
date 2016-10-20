@@ -239,7 +239,7 @@ sub norm {
                                      index => @index ? $index[0] : $untreated . ".rti" ) if ($hasctrl);
     
     $drtc = RSF::Data::IO::RTC->new( file  => $denatured,
-                                     index => @index ? $index[1] : $denatured . ".rti" ) if ($config->scoremethod() == 3);
+                                     index => @index == 3 ? $index[1] : $denatured . ".rti" ) if ($config->scoremethod() == 3);
     
     $trtc = RSF::Data::IO::RTC->new( file  => $treated,
                                      index => @index ? $index[-1] : $treated . ".rti"); 
