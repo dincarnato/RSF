@@ -637,7 +637,8 @@ sub count {
             my @row = split(/\t/, $row);
             
             next if (!exists $transcripts{$row[2]});
-            next if ($row[1] & 16); # Libraries should be stranded, so all reads should map to the forward strand
+            next if ($row[1] & 16 &&
+                     !$mutcount); # In RT-stops count mode Libraries should be stranded, so all reads should map to the forward strand
             
             if ($row[2] ne $lastid) {
                 
@@ -659,7 +660,7 @@ sub count {
             }
             
             if ($mutcount) {  # Mutations count mode
-                
+               
                 $stops[$_]++ for (parsemd($row));
                 
                 map {$coverage[$_]++} ($row[3] - 1 < 0 ? 0 : $row[3] - 1) ..
