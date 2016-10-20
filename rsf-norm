@@ -83,7 +83,7 @@ do {
                 "t|treated=s"            => \$treated,
                 "d|denatured=s"          => \$denatured,
                 "i|index=s"              => \$index,
-                "d|decimals=i"           => \$decimals,
+                "D|decimals=i"           => \$decimals,
                 "p|processors=i"         => \$threads,
                 "n|nan=i"                => \$nan,
                 "rm|remap-reactivities"  => \$remap,
@@ -665,7 +665,8 @@ sub help {
                                            the same folder of the untreated and treated samples.
  -p  or --processors                 Number of processors to use (Default: 1)
  -o  or --output-dir                 Output directory (Default: <treated>_vs_<untreated>/ for Ding method,
-                                                                <treated>/ for Rouskin method)
+                                                                <treated>/ for Rouskin method,
+                                                                <treated>_vs_<untreated>_<denatured>/ for Siegfried method)
  -ow or --overwrite                  Overwrites output directory (if the specified path already exists)
  -c  or --config-file                A configuration file with normalization parameters
                                      Note: If the provided file exists, this will override any command-line
@@ -685,7 +686,7 @@ sub help {
  -wo or --window-offset              Offset for sliding window during normalization (Default: none [Ding|Siegfried], 50 [Rouskin])
  -mc or --mean-coverage              Discards any transcript with mean coverage below this threshold (>=0, Default: 1)
  -ec or --median-coverage            Discards any transcript with median coverage below this threshold (>=0, Default: 1)
- -d  or --decimals                   Number of decimals for reporting reactivities (1-10, Default: 3)
+ -D  or --decimals                   Number of decimals for reporting reactivities (1-10, Default: 3)
  -n  or --nan                        Transcript positions with reads coverage behind this threshold will be reported as NaN in
                                      the reactivity profile (Default: 10)
  
