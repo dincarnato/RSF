@@ -353,7 +353,7 @@ sub norm {
                         
                     }
                     
-                    $tstops[$_] = ($tstops[$_] - $ustops[$_]) / $dstops[$_] for (0 .. $#tstops);
+                    $tstops[$_] = $dstops[$_] ? ($tstops[$_] - $ustops[$_]) / $dstops[$_] : 0 for (0 .. $#tstops);
                     
                 }
                 else {
