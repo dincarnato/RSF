@@ -49,10 +49,12 @@ my ($help, $output, $overwrite, $configfile,
     @index, @pool, @ids);
 
 my %results : shared;
-%results = ( cov     => 0,
-             incov   => 0,
-             diffseq => 0,
-             nouid   => 0 );
+%results = ( cov      => 0,
+             incov    => 0,
+             diffuseq => 0,
+             nouid    => 0,
+             diffdseq => 0,
+             nodid    => 0 );
 
 $threads = 1;
 $decimals = 3;
@@ -215,12 +217,15 @@ $_->join() for(@pool);
 
 print "\n[+] Normalization statistics:\n" .
       "\n  [*] Covered transcripts:   " . $results{cov} .
-      "\n  [*] Discarded transcripts: " . ($results{incov} + $results{diffseq} + $results{nocov} + $results{nouid}) . " total" .
+      "\n  [*] Discarded transcripts: " . ($results{incov} + $results{diffuseq} + $results{diffdseq} + $results{nocov} + $results{nouid} + $results{nodid}) . " total" .
       "\n                             " . $results{incov} . " insufficient coverage";
       
-print "\n                             " . $results{diffseq} . " mismatch between treated and untreated sample sequence" .
+print "\n                             " . $results{diffuseq} . " mismatch between treated and untreated sample sequence" .
       "\n                             " . $results{nouid} . " absent in untreated sample reference" if ($hasctrl);
-
+      
+print "\n                             " . $results{diffdseq} . " mismatch between treated and denatured sample sequence" .
+      "\n                             " . $results{nodid} . " absent in denatured sample reference" if ($config->scoremethod() == 3);
+      
 print "\n\n[+] All done.\n\n";
 
 sub norm {
@@ -269,7 +274,7 @@ sub norm {
                 if ($uentry->sequence() ne $sequence) {
                     
                     lock(%results);
-                    $results{diffseq}++;
+                    $results{diffuseq}++;
             
                     next;
                     
@@ -307,7 +312,7 @@ sub norm {
                     if ($dentry->sequence() ne $sequence) {
                         
                         lock(%results);
-                        $results{diffseq}++;
+                        $results{diffdseq}++;
                 
                         next;
                         
@@ -354,7 +359,7 @@ sub norm {
                 else {
                 
                     lock(%results);
-                    $results{nouid}++;
+                    $results{nodid}++;
                     
                     next;
                     
