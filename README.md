@@ -6,6 +6,7 @@ Despite the establishment of several methods for querying RNA secondary structur
 ### NEW (version 1.2.0a):
 ### RSF now supports the analysis of SHAPE-MaP and RING-MaP data (experimental)
 
+
 The RNA Structure Framework is a modular toolkit developed to deal with RNA structure probing high-throughput data, from reads mapping to structure inference.  
 Its main features are: 
 
@@ -22,7 +23,6 @@ For support requests, please post your questions to: https://groups.google.com/f
 
 Danny Incarnato (danny.incarnato[at]hugef-torino.org)  
 Epigenetics Unit @ HuGeF [Human Genetics Foundation]  
-Group leader: Prof. Salvatore Oliviero (salvatore.oliviero[at]hugef-torino.org
 
 
 ## Citation
