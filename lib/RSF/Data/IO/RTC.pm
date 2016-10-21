@@ -227,6 +227,8 @@ sub write {
     my $self = shift;
     my @sequences = @_ if (@_);
     
+    my (@offsets);
+    
     $self->throw("Filehandle isn't in write mode") unless ($self->mode() =~ m/^w$/);
     
     foreach my $sequence (@sequences) {
@@ -269,11 +271,14 @@ sub write {
         if ($self->{buildindex}) {
              
             $self->{_offsets}->{$id} = $self->{_lastoffset};
+            push(@offsets, $self->{_lastoffset});
             $self->{_lastoffset} += 4 * ($length * 2 + 2) + length($id) + 1 + ($length + ($length % 2)) / 2;
             
         }
         
     }
+    
+    return(wantarray() ? @offsets : \@offsets) if ($self->{buildindex});
     
 }
 

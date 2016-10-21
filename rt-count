@@ -36,6 +36,8 @@ use Core::Process::Queue;
 use Core::Statistics;
 use Data::IO::Sequence;
 use Data::Sequence::Utils;
+use RSF::Data::RTC;
+use RSF::Data::IO::RTC;
 use Term::Table;
 
 $|++;
@@ -52,9 +54,9 @@ my ($tmp, $tmpdir, $output, $keep,
     $bm, $nobam, $error, $fastq,
     $bam_trim5, $hex, $offset, $threads,
     $processmanager, $madetmp, $qcounter, $qresults,
-    $table, $bk, $cm, $mutcount, @bam_trim5,
-    @tmp, @pool, %transcripts, %bases,
-    %spacer);
+    $table, $bk, $cm, $mutcount,
+    $seqio, $rtcio, @bam_trim5, @tmp,
+    @pool, %transcripts, %spacer);
 
 $tmp = randalphanum(0xf);
 $tmpdir = "/tmp/";
@@ -75,7 +77,6 @@ $offset = 0;
 $threads = 1;
 $madetmp = 0;
 $bam_trim5 = 0;
-%bases = map { $_ => --$hex } qw(N T G C A);
 
 do {
     
@@ -434,45 +435,31 @@ if ($fastq) { # Some of the provided files need to be mapped
 
 print "\n[+] Getting transcripts from reference, and building count table base structure...";
 
-open(my $ch, ">:raw", $tmpdir . $tmp . "_base.rtc") or die "\n\n  [!] Error: Unable to write count table base structure (" . $! . ")\n\n";
-open(my $ih, ">:raw", $output . "counts/" . "index.rti") or die "\n\n  [!] Error: Unable to write count table index (" . $! . ")\n\n";
-select((select($ch), $|=1)[0]);
-select((select($ih), $|=1)[0]);
+$seqio = Data::IO::Sequence->new(file => $multifasta);
+$rtcio = RSF::Data::IO::RTC->new( file       => $tmpdir . $tmp . "_base.rtc",
+                                  index      => $output . "counts/" . "index.rti",
+                                  buildindex => 1,
+                                  mode       => "w" );
 
-my $io = Data::IO::Sequence->new(file => $multifasta);
-
-while (my $entry = $io->read()) {
+while (my $entry = $seqio->read()) {
     
     $entry->unmask(); # Makes sequence uppercase
     
-    my ($id, $sequence);
-    $id = $entry->id();
-    
-    $sequence = join("", map{sprintf("%x", $bases{$_})} split(//, $entry->sequence()));
+    my ($rentry, $offset);
+    $rentry = RSF::Data::RTC->new( id       => $entry->id(),
+                                   sequence => $entry->sequence(),
+                                   rtstops  => [(0) x $entry->length()],
+                                   coverage => [(0) x $entry->length()] );
+    ($offset) = $rtcio->write($rentry);
     
     # Store length and offset for later steps
     # The offset is already positioned to the right byte to overwrite the zeros array
-    $transcripts{$id} = { length => length($sequence),
-                          offset => $offset + (4 * 2) + length($id) + 1 + (length($sequence) + (length($sequence) % 2)) / 2 };             
-    
-    print $ih pack("L<", length($id) + 1) .                 # len_transcript_id (uint32_t)
-              $id . "\0" .                                  # transcript_id (char[len_transcript_id])
-              pack("L<", $offset);                          # offset in count table (uint32_t)
-    
-    print $ch pack("L<", length($id) + 1) .                  # len_transcript_id (uint32_t)
-              $id . "\0" .                                   # transcript_id (char[len_transcript_id])
-              pack("L<", length($sequence)) .                # len_seq (uint32_t)
-              pack("H*", $sequence) .                        # seq (uint8_t[(len_seq+1)/2])
-              pack("L<*", (0) x (length($sequence) * 2));    # stops, cov (uint32_t[len_seq x 2])
-              
-    $offset += 4 * (length($sequence) * 2 + 2) + length($id) + 1 + (length($sequence) + (length($sequence) % 2)) / 2;
+    $transcripts{$entry->id()} = { length => $entry->length(),
+                                   offset => $offset + (4 * 2) + length($entry->id()) + 1 + ($entry->length() + ($entry->length() % 2)) / 2 };
     
 }
 
-print $ch "\x5b\x65\x6f\x66\x72\x74\x63\x5d"; # EOF Marker
-
-close($ih);
-close($ch);
+$rtcio->close();
 
 ##
 # SAM/BAM Header validation
