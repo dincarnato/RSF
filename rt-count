@@ -661,7 +661,7 @@ sub count {
             
             if ($mutcount) {  # Mutations count mode
                
-                $stops[$_]++ for (parsemd($row));
+                $stops[$_]++ for (parsemd(@row));
                 
                 map {$coverage[$_]++} ($row[3] - 1 < 0 ? 0 : $row[3] - 1) ..
                                        ($row[3] + parsecigar($row[5]) - 1 > $transcripts{$row[2]}->{length} - 1 ? $transcripts{$row[2]}->{length} - 1 : $row[3] + parsecigar($row[5]) - 1);
@@ -810,8 +810,9 @@ sub guess_type {
 
 sub parsemd { # SAM MD flag parser
     
-    my ($md, $llen, @row, @pos);
-    @row = split(/\t/, $_[0]);
+    my @row = @_;
+    
+    my ($md, $llen, @pos);
     $llen = $row[3];
     
     return if (@row < 11);
