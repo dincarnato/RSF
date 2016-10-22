@@ -23,7 +23,7 @@ use File::Copy;
 use File::Path qw(mkpath rmtree);
 use File::Spec;
 use FindBin qw($Bin);
-use Fcntl qw(SEEK_END);
+use Fcntl qw(SEEK_SET SEEK_END);
 use Getopt::Long qw(:config no_ignore_case);
 use threads;
 use Thread::Queue;
@@ -56,7 +56,7 @@ my ($tmp, $tmpdir, $output, $keep,
     $processmanager, $madetmp, $qcounter, $qresults,
     $table, $bk, $cm, $mutcount,
     $seqio, $rtcio, @bam_trim5, @tmp,
-    @pool, %transcripts, %spacer);
+    @pool, %transcripts, %spacer, %files);
 
 $tmp = randalphanum(0xf);
 $tmpdir = "/tmp/";
@@ -227,11 +227,13 @@ foreach my $sample (uniq(@ARGV)) {
 
     my ($file, $path, $extension) = fileparse($sample, qr/\.[^.]*/);
     
-    push(@tmp, { path  => $sample,
-                 file  => $file,
-                 type  => guess_type($sample),
-                 trim5 => 0 });
+    push(@tmp, { path   => $sample,
+                 file   => $file,
+                 type   => guess_type($sample),
+                 trim5  => 0,
+                 nreads => 0});
     
+    $files{$file} = $#tmp;
     $spacer{$file} = length($file);
     
     # If only one value for 5' trimming in SAM/BAM files has been specified, this is applied to all the passed SAM/BAM files
@@ -368,7 +370,7 @@ if ($fastq) { # Some of the provided files need to be mapped
     
         next if ($sample->{type} ne "FastQ");
         
-        $processmanager->enqueue( command => $bowtie . ($trim3 ? " -3 " . $trim3 . " " : " ") . ($trim5 ? " -5 " . $trim5 . " " : " ") . "-q " . (defined $bv ? "-v " . $bv : "-n " . $bn) . " --norc " .
+        $processmanager->enqueue( command => $bowtie . ($trim3 ? " -3 " . $trim3 . " " : " ") . ($trim5 ? " -5 " . $trim5 . " " : " ") . "-q " . (defined $bv ? "-v " . $bv : "-n " . $bn) . ($mutcount ? " " : " --norc ") .
                                                        ($ba ? "-a" : "-k " . $bk) . " -m " . $bm . " --best --strata -p " . $wt . " --chunkmbs " . $bc . " -S \"" . $bi . "\" \"" . $sample->{path} . "\"" .
                                                        " | grep -v '4\t\\*\t0\t0' > \"" . $tmpdir . $tmp . "_" . $sample->{file} . ".sam\"",
                                   id      => $sample->{file},
@@ -387,8 +389,10 @@ if ($fastq) { # Some of the provided files need to be mapped
         
         next if ($sample->{type} ne "FastQ");
         
-        my ($mapped, $failed, $suppressed, $reported) = bowtie_log($tmpdir . $tmp . "_" . $sample->{file} . "_mapping.log");
-        my $total = $mapped + $failed + $suppressed;
+        my ($mapped, $failed, $suppressed, $reported, $total);
+        ($mapped, $failed, $suppressed, $reported) = bowtie_log($tmpdir . $tmp . "_" . $sample->{file} . "_mapping.log");
+        $total = $mapped + $failed + $suppressed;
+        $sample->{nreads} = $mapped;
         
         die "\n  [!] All reads for sample \"" . $sample->{file} . "\" have failed to map." .
             "\n      Please check the transcriptome assembly and try again.\n\n" if ($mapped == 0);
@@ -570,6 +574,36 @@ if ($fastq < @tmp) {
         print "\n";
         
     }
+    
+    # Count mapped reads for remaining SAM/BAM files
+    # This is needed in a future version of RSF
+    #print "\n[+] Getting total mapped reads count for remaining SAM/BAM files...\n";
+    #
+    #$processmanager->onstart(sub { print "\n  [-] Counting sample \"" . $_[0] . ($nobam ? ".sam" : ".bam") . "\"" . (" " x $spacer{$_[0]}) . "(PID: " . $_[1] . ")"; });
+    #    
+    #foreach my $sample (@tmp) {
+    #    
+    #    next if ($sample->{type} eq "FastQ");
+    #    
+    #    my $path = $sample->{path};
+    #    
+    #    $processmanager->enqueue( command => sub { my $n = `samtools view -F 0x40 $path | cut -f1 | sort | uniq | wc -l`; chomp($n); return($n); },
+    #                              id      => $sample->{file} );
+    #    
+    #}
+    #
+    #$processmanager->start();
+    #$processmanager->waitall();
+    #
+    #while (my $sample = $processmanager->dequeue()) {
+    #    
+    #    die "\n\n  [!] Error: Unable to count total mapped reads for sample \"" . $sample->id() . ($nobam ? ".sam" : ".bam") . "\"\n\n" if (!ispositive($sample->exitcode()));
+    #    
+    #    $tmp[$files{$sample->id()}]->{nreads} = $sample->exitcode();
+    #    
+    #}
+    #
+    #print "\n";
 
 }
 
@@ -689,6 +723,10 @@ sub count {
             $covered++;
             
         }
+        
+        # Save the number of mapped reads in RTC file (4 bytes before EOF Marker)
+        seek($ch, -12, SEEK_END);
+        print $ch pack("L<", $sample->{nreads});
         
         close($fh);
         close($ch);

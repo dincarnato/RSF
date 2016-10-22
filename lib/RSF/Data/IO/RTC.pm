@@ -1,6 +1,7 @@
 package RSF::Data::IO::RTC;
 
 use strict;
+use Core::Mathematics;
 use Core::Utils;
 use Fcntl qw(SEEK_SET SEEK_END);
 use RSF::Data::RTC;
@@ -25,6 +26,7 @@ sub new {
     my $self = $class->SUPER::new(%parameters);
     $self->_init({ index       => undef,
                    buildindex  => 0,
+                   mappedreads => 0,
                    _offsets    => {},
                    _lastoffset => 0 }, \%parameters);
     
@@ -58,6 +60,7 @@ sub _validate {
         $self->reset();
         
     }
+    else { $self->throw("Total mapped reads must be a positive integer") if (!ispositive($self->{mappedreads})); }
     
     $self->{index} = $self->{file} . ".rti" if ($self->{buildindex} &&
                                                 defined $self->{file} &&
@@ -69,7 +72,8 @@ sub _loadindex {
     
     my $self = shift;
     
-    my $fh = $self->{_fh};
+    my ($fh, $n);
+    $fh = $self->{_fh};
         
     if (-e $self->{index}) {
     
@@ -98,13 +102,13 @@ sub _loadindex {
         close($ih);
     
     }
-    elsif ($self->{buildindex}) { # Builds missing index
+    else { # Builds missing index
         
         my ($data, $offset, $idlen, $id,
             $length);
         $offset = 0;
         
-        while($offset < (-s $self->{file}) - 8) { # While the 8 bytes of EOF Marker are reached
+        while($offset < (-s $self->{file}) - 12) { # While the 4 + 8 bytes of total mapped reads + EOF Marker are reached
             
             read($fh, $data, 4);
             $idlen = unpack("L<", $data);
@@ -123,7 +127,8 @@ sub _loadindex {
             
         }
         
-        if (defined $self->{index}) {
+        if ($self->{buildindex} &&
+            defined $self->{index}) {
             
             open(my $ih, ">:raw", $self->{index}) or $self->throw("Unable to write RTI index file (" . $! . ")");
             select((select($ih), $|=1)[0]);
@@ -141,6 +146,11 @@ sub _loadindex {
         }
         
     }
+    
+    seek($fh, -12, SEEK_END);
+    read($fh, $n, 4);
+    
+    $self->mappedreads(unpack("L<", $n));
     
     $self->reset();
     
@@ -175,10 +185,11 @@ sub read {
     }
     
     # Checks whether RTCEOF marker has been reached
-    read($fh, $eightbytes, 8);
-    seek($fh, tell($fh) - 8, SEEK_SET);
-        
-    if ($eightbytes eq "\x5b\x65\x6f\x66\x72\x74\x63\x5d") {
+    read($fh, $eightbytes, 12);
+    seek($fh, tell($fh) - 12, SEEK_SET);
+    
+    # The first 4 bytes are the number of mapped reads in the experiment
+    if (substr($eightbytes, -8) eq "\x5b\x65\x6f\x66\x72\x74\x63\x5d") {
     
         $self->reset() if ($self->{autoreset});
     
@@ -282,6 +293,20 @@ sub write {
     
 }
 
+sub mappedreads {
+    
+    my $self = shift;
+    my $n = shift if (@_);
+    
+    $self->throw("Total mapped reads must be a positive integer") if (defined $n &&
+                                                                      !ispositive($n));
+    
+    $self->{mappedreads} = $n if (defined $n);
+    
+    return($self->{mappedreads});
+    
+}
+
 sub close {
     
     my $self = shift;
@@ -290,7 +315,8 @@ sub close {
     
         my $fh = $self->{_fh};
         
-        print $fh "\x5b\x65\x6f\x66\x72\x74\x63\x5d";
+        print $fh pack("L<", $self->{mappedreads}) .  # Total mapped reads (uint32_t)
+                  "\x5b\x65\x6f\x66\x72\x74\x63\x5d"; # EOF Marker
         
         if ($self->{buildindex} &&
             defined $self->{index}) {
