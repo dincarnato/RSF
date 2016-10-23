@@ -5,7 +5,7 @@
 # Epigenetics Unit @ HuGeF [Human Genetics Foundation]
 #
 # Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
-# Summary: Performs reads mapping, and calculates per-base RT-stops and coverage
+# Summary: Performs reads mapping, and calculates per-base RT-stops/mutations and coverage
 #
 # This program is free software, and can be redistribute  and/or modified
 # under the terms of the GNU General Public License as published by
@@ -909,7 +909,7 @@ sub help {
  Group leader: Prof. Salvatore Oliviero
     
  Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
- Summary: Performs reads mapping, and calculates per-base RT-stops and coverage
+ Summary: Performs reads mapping, and calculates per-base RT-stops/mutations and coverage
  
  Usage:   rt-count [Options] Sample1.fastq Sample2.sam Sample3.bam ... Samplen.fastq
  
