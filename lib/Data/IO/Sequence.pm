@@ -32,7 +32,7 @@ sub new {
     $self->_init({ format   => "AUTO",
                    _offsets => [],
                    _pack    => undef,
-                   _index   => 0,
+                   _index   => {},
                    _lastid  => 1 }, \%parameters);
     
     if ($class =~ m/^Data::IO::Sequence::\w+$/) {

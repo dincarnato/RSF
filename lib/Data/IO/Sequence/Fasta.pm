@@ -20,20 +20,34 @@ use strict;
 use Core::Utils;
 use Data::Sequence;
 use Data::Sequence::Utils;
+use Fcntl qw(SEEK_SET);
 
 use base qw(Data::IO::Sequence);
 
 sub read {
     
     my $self = shift;
+    my $tsid = shift if (@_);
     
     my ($fh, $stream, $header, $id,
         $description, $gi, $accession, $version,
-        $sequence, $object);
+        $sequence, $object, $offset);
     
     $self->throw("Filehandle isn't in read mode") unless ($self->mode() eq "r");
     
     $fh = $self->{_fh};
+    
+    if (defined $tsid) {
+        
+        if (exists $self->{_index}->{$tsid}) { seek($fh, $self->{_index}->{$tsid}, SEEK_SET); }
+        else {
+            
+            if (keys %{$self->{_index}}) { $self->throw("Cannot find sequence \"" . $tsid . "\" in file"); }
+            else { $self->throw("File is not indexed"); }
+            
+        }
+        
+    }
     
     if (eof($fh)) {
         
@@ -43,7 +57,7 @@ sub read {
         
     }
     
-    push(@{$self->{_prev}}, tell($fh));
+    $offset = tell($fh);
     
     local $/ = "\n>";
     $stream = <$fh>;
@@ -56,7 +70,7 @@ sub read {
         if (!defined $header) {
             
             # First seq header must start with >
-            next if (@{$self->{_prev}} == 1 &&
+            next if (!@{$self->{_prev}} &&
                      $line !~ m/^>/);
             
             $header = $line;
@@ -98,6 +112,14 @@ sub read {
     
     return($self->read()) if (!defined $sequence ||
                               !isseq($sequence, "-"));
+    
+    # Index building at runtime
+    
+    $self->throw("Duplicate sequence ID \"" . $id . "\" (Offsets: " . $self->{_index}->{$id} . ", " . $offset . ")") if (exists $self->{_index}->{$id} &&
+                                                                                                                         $self->{_index}->{$id} != $offset);
+    
+    $self->{_index}->{$id} = $offset;
+    push(@{$self->{_prev}}, $offset);
     
     $object = Data::Sequence->new( id          => $id,
                                    name        => $header,

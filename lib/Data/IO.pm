@@ -222,7 +222,9 @@ sub reset {
     
     my $self = shift;
     
-    seek($self->{_fh}, 0, 0) if (fileno($self->{_fh}));
+    # Reinitialize the prev array for back() calls
+    undef(@{$self->{_prev}});
+    seek($self->{_fh}, 0, SEEK_SET) if (fileno($self->{_fh}));
     
 }
 

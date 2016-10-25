@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 ##
-# RT Count (v1.2.0)
+# RT Count (v1.2.0b)
 # Epigenetics Unit @ HuGeF [Human Genetics Foundation]
 #
 # Author:  Danny Incarnato (danny.incarnato[at]hugef-torino.org)
@@ -55,7 +55,7 @@ my ($tmp, $tmpdir, $output, $keep,
     $bam_trim5, $hex, $offset, $threads,
     $processmanager, $madetmp, $qcounter, $qresults,
     $table, $bk, $cm, $mutcount,
-    $seqio, $rtcio, @bam_trim5, @tmp,
+    $seqio, $rtcio, $includeclip, @bam_trim5, @tmp,
     @pool, %transcripts, %spacer, %files);
 
 $tmp = randalphanum(0xf);
@@ -109,7 +109,8 @@ do {
                 "p|processors=i"          => \$threads,
                 "f|fasta=s"               => \$multifasta,
                 "cm|cutadapt-min-align=i" => \$cm,
-                "m|count-mutations"       => \$mutcount ) or help(1);
+                "m|count-mutations"       => \$mutcount,
+                "ic|include-clipped"      => \$includeclip ) or help(1);
 
 };
 
@@ -587,7 +588,7 @@ if ($fastq < @tmp) {
     #    
     #    my $path = $sample->{path};
     #    
-    #    $processmanager->enqueue( command => sub { my $n = `samtools view -F 0x40 $path | cut -f1 | sort | uniq | wc -l`; chomp($n); return($n); },
+    #    $processmanager->enqueue( command => sub { my $n = `samtools view -F 0x40 $path | cut -f1 | sort -T $tmpdir | uniq | wc -l`; chomp($n); return($n); },
     #                              id      => $sample->{file} );
     #    
     #}
@@ -653,13 +654,18 @@ sub count {
                                                                                           $sample->{file} . "\" (" . $! . ")") and next;
         while (!eof($fh)) {
             
-            my $row = <$fh>;
+            my ($row, $clip5, $cov, @row);
+            $row = <$fh>;
             chomp($row);
-            my @row = split(/\t/, $row);
+            @row = split(/\t/, $row);
+            ($clip5, $cov) = parsecigar($row[5]);
             
             next if (!exists $transcripts{$row[2]});
             next if ($row[1] & 16 &&
                      !$mutcount); # In RT-stops count mode Libraries should be stranded, so all reads should map to the forward strand
+            next if ($clip5 &&
+                     !$mutcount &&
+                     !$includeclip); # Discard read in RT-count mode, if it has soft/hard clipping at 5'-end
             
             if ($row[2] ne $lastid) {
                 
@@ -681,32 +687,27 @@ sub count {
             }
             
             if ($mutcount) {  # Mutations count mode
-               
-                $stops[$_]++ for (parsemd(@row));
+                
+                if ($row !~ m/NM:i:0/) { # Parse the MD flag only when edit distance != 0
+                    
+                    my $entry = $seqio->read($row[2]);
+                    $stops[$_]++ for (parsemd(\@row, $entry->sequence()));
+                
+                }
                 
                 map {$coverage[$_]++} ($row[3] - 1 < 0 ? 0 : $row[3] - 1) ..
-                                       ($row[3] + parsecigar($row[5]) - 1 > $transcripts{$row[2]}->{length} - 1 ? $transcripts{$row[2]}->{length} - 1 : $row[3] + parsecigar($row[5]) - 1);
+                                       ($row[3] + $cov - 1 > $transcripts{$row[2]}->{length} - 1 ? $transcripts{$row[2]}->{length} - 1 : $row[3] + $cov - 1);
                 
                 
             }
             else {  # RT-stops count mode
             
-                if ($row[3] >= 2 + $sample->{trim5}) {
+                if ($row[3] >= 2 + $sample->{trim5} + $clip5) { # Read 5'-end is not before transcript 5'-end 
         
-                    $row[3] -= $sample->{trim5};
-                    $stops[($row[3] - 2)]++;
+                    $row[3] -= $sample->{trim5} + $clip5 + 2;
+                    $stops[$row[3]]++;
                     
-                    map {$coverage[$_]++} ($row[3] - 2 < 0 ? 0 : $row[3] - 2) ..
-                                           ($row[3] + parsecigar($row[5]) - 1 > $transcripts{$row[2]}->{length} - 1 ? $transcripts{$row[2]}->{length} - 1 : $row[3] + parsecigar($row[5]) - 1);
-        
-                    #for my $i ($row[3] - 2 .. $row[3] + length($row[9]) - 1) {
-                    #
-                    #    next if ($i < 0);                                       # In case the actual 5'-end of transcript starts before the annotated one
-                    #    last if ($i > $transcripts{$row[2]}->{length} - 1);     # In case the actual 3'-end of transcript ends after the annotated one
-                    #
-                    #    $coverage[$i]++;
-                    #
-                    #}
+                    map {$coverage[$_]++} $row[3] .. ($row[3] + $cov + $clip5 - 1 > $transcripts{$row[2]}->{length} - 1 ? $transcripts{$row[2]}->{length} - 1 : $row[3] + $cov + $clip5 - 1);
         
                 }
                 
@@ -835,14 +836,14 @@ sub guess_type {
 
 sub parsemd { # SAM MD flag parser
     
-    my @row = @_;
+    my ($row, $reference) = @_;
     
     my ($md, $llen, @pos);
-    $llen = $row[3];
+    $llen = $row->[3];
     
-    return if (@row < 11);
+    return if (@{$row} < 11);
     
-    for (10 .. $#row) { if ($row[$_] =~ m/^MD:Z:(.+)$/) { $md = $1; } }
+    for (10 .. $#{$row}) { if ($row->[$_] =~ m/^MD:Z:(.+)$/) { $md = $1; } }
     
     return if (!defined $md);
     
@@ -858,12 +859,30 @@ sub parsemd { # SAM MD flag parser
         
             if ($next eq "^") { # Deletion
                 
+                my ($del, $start, $end, $win,
+                    $real, $disttodel, %collapsed);
+                
                 $md =~ s/^\^//;
                 $md =~ m/^([ACGNT]+)/;
                 
-                my $del = $1;
-                $len += length($del);
+                # Extract a window of 20 nt (+/- 10nt) centered on the deletion
+                $del = $1;
+                $start = $len + $llen - 1 >= 9 ? $len + $llen - 1 - 9 : 0;
+                $end = $len + $llen - 1 + length($del) + 10 < length($reference) ? $len + $llen - 1 + length($del) + 10 : length($reference) - 1;
+                $win = substr($reference, $start, $end - $start + 1);
+                $disttodel = $len + $llen >= 10 ? 10 : $len + $llen;
+                $real = substr($reference, $start, $disttodel) . substr($reference, $start + $disttodel + length($del), $end - $start - $disttodel - length($del) + 1);
                 
+                # Slide the deletion along sequence, and build hash table
+                $collapsed{substr($win, 0, $_) . substr($win, $_ + length($del), length($win) - length($del) - $_)}++ for (0 .. length($win) - length($del));
+                
+                if ($collapsed{$real} == 1) { # Deletion unambiguously mapped
+                    
+                    push(@pos, $len + $llen + $_) for (0 .. length($del) - 1);
+                    
+                }
+                
+                $len += length($del);
                 $md =~ s/^$del//;
                 
             }
@@ -890,11 +909,22 @@ sub parsecigar {
     
     my $cigar = shift;
     
-    my $length = 0;
+    my ($clip, $cov) = (0, 0);
     
-    while ($cigar =~ m/(\d+)[DM]/g) { $length += $1; }
+    while ($cigar =~ m/^(\d+[SH])/) {
+        
+        my $clipsh = $1;
+        $cigar =~ s/^$clipsh//;
+        $clipsh =~ s/[SH]$//;
+        $clip += $clipsh;
+        
+    }
     
-    return($length);
+    while ($cigar =~ m/(\d+)[DM]/g) { $cov += $1; }
+    
+    $cov += $clip if ($includeclip);
+    
+    return($clip, $cov);
     
 }
 
@@ -904,7 +934,7 @@ sub help {
     
     die <<HELP;
  
- RT Count (v1.2.0)
+ RT Count (v1.2.0b)
  Epigenetics Units @ HuGeF [Human Genetics Foundation]
  Group leader: Prof. Salvatore Oliviero
     
@@ -939,6 +969,11 @@ sub help {
  -f  or --fasta                      Path to a FASTA file containing the reference transcripts
                                      Note: Transcripts in this file must match transcripts in SAM/BAM file headers.
                                            This can be omitted if a Bowtie index is specified by -bi (or --bowtie-index).
+ -ic or --include-clipped            Include reads that have been soft/hard-clipped at their 5'-end when calculating RT-stops
+                                     Note: The default behavior is to exclude soft/hard-clipped reads.
+                                           When this option is active, the RT-stop position is considered to be the position
+                                           preceding the clipped bases.
+                                           This option has no effect when -m (or --count-mutations) is enabled.
  -m  or --count-mutations            *Experimental*: Enables mutations count instead of RT-stops count (for SHAPE-MaP/RING-MaP)
  
  Cutadapt options
