@@ -17,10 +17,10 @@
 package Data::IO::Sequence::Fasta;
 
 use strict;
+use Fcntl qw(SEEK_SET);
 use Core::Utils;
 use Data::Sequence;
 use Data::Sequence::Utils;
-use Fcntl qw(SEEK_SET);
 
 use base qw(Data::IO::Sequence);
 

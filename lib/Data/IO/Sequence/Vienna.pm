@@ -17,10 +17,10 @@
 package Data::IO::Sequence::Vienna;
 
 use strict;
+use Fcntl qw(SEEK_SET);
 use Core::Utils;
 use Data::Sequence::Structure;
 use Data::Sequence::Utils;
-use Fcntl qw(SEEK_SET);
 use RNA::Utils;
 
 use base qw(Data::IO::Sequence);

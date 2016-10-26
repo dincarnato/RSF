@@ -25,7 +25,7 @@ use Getopt::Long qw(:config no_ignore_case);
 use threads;
 use threads::shared;
 use Thread::Queue;
-use XML::LibXML::Simple qw(XMLin);
+use XML::LibXML;
 
 use lib $Bin . "/lib";
 
@@ -175,29 +175,41 @@ sub combine {
         
         my ($spdref, $sequence, $scoring, $reactive,
             $norm, $spd, $mean, $std, $attributes,
-            $offset, $win, $remap, @profile, @mean,
-            @stdev);
+            $offset, $win, $remap, $reactive2,
+            @profile, @mean, @stdev);
         
         for (@spd) {
             
-            my ($file, @reactivity);
+            my ($file, $reactivity, @reactivity);
             $file = -d $_ ? $_ . $id . ".spd" : $_;
             
             eval {
                 
                 no warnings;
                 
-                $spdref = XMLin($file);
-                $spdref->{transcript}->{sequence} =~ s/\s+?//g;
-                $sequence = $spdref->{transcript}->{sequence} if (!defined $sequence);
-                $scoring = $spdref->{scoring} if (!defined $scoring);
-                $norm = $spdref->{norm} if (!defined $norm);
-                $win = $spdref->{win} if (!defined $win);
-                $offset = $spdref->{offset} if (!defined $offset);
-                $remap = $spdref->{remap} if (!defined $remap);
-                $reactive .= $spdref->{reactive};
+                my ($sequence2, $scoring2, $norm2, $win2,
+                    $offset2, $remap2);
                 
-                if ($sequence ne $spdref->{transcript}->{sequence}) {
+                $spdref = XML::LibXML->load_xml(location => $file);
+                $sequence2 = $spdref->findnodes("/data/transcript/sequence")->to_literal();
+                $norm2 = $spdref->findnodes("/data/\@norm")->to_literal();
+                $scoring2 = $spdref->findnodes("/data/\@scoring")->to_literal();
+                $win2 = $spdref->findnodes("/data/\@win")->to_literal();
+                $offset2 = $spdref->findnodes("/data/\@offset")->to_literal();
+                $remap2 = $spdref->findnodes("/data/\@remap")->to_literal();
+                $reactive2 = $spdref->findnodes("/data/\@reactive")->to_literal();
+                
+                $sequence2 =~ s/\s+?//g;
+
+                $sequence = $sequence2 if (!defined $sequence);
+                $scoring = $scoring2 if (!defined $scoring);
+                $norm = $norm2 if (!defined $norm);
+                $win = $win2 if (!defined $win);
+                $offset = $offset2 if (!defined $offset);
+                $remap = $remap2 if (!defined $remap);
+                $reactive .= $reactive2;
+                
+                if ($sequence ne $sequence2) {
                     
                     lock(%results);
                     $results{diffseq}++;
@@ -206,7 +218,7 @@ sub combine {
                     
                 }
                 
-                if ($scoring ne $spdref->{scoring}) {
+                if ($scoring ne $scoring2) {
                     
                     lock(%results);
                     $results{diffscore}++;
@@ -215,9 +227,9 @@ sub combine {
                     
                 }
                 
-                if ($norm ne $spdref->{norm} ||
-                    ($norm eq $spdref->{norm} &&
-                     $remap != $spdref->{remap})) {
+                if ($norm ne $norm2 ||
+                    ($norm eq $norm2 &&
+                     $remap != $remap2)) {
                     
                     lock(%results);
                     $results{diffnorm}++;
@@ -226,7 +238,7 @@ sub combine {
                     
                 }
                 
-                if ($win != $spdref->{win}) {
+                if ($win != $win2) {
                     
                     lock(%results);
                     $results{diffwin}++;
@@ -235,7 +247,7 @@ sub combine {
                     
                 }
                 
-                if ($offset != $spdref->{offset}) {
+                if ($offset != $offset2) {
                     
                     lock(%results);
                     $results{diffoffset}++;
@@ -248,10 +260,11 @@ sub combine {
             
             last if ($@);
             
-            $spdref->{transcript}->{reactivity} =~ s/\s+?//g;
-            @reactivity = split(/,/, $spdref->{transcript}->{reactivity});
+            $reactivity = $spdref->findnodes("/data/transcript/reactivity")->to_literal();
+            $reactivity =~ s/\s+?//g;
+            @reactivity = split(/,/, $reactivity);
             
-            push(@{$profile[$-[0]]}, $reactivity[$-[0]]) while($sequence =~ m/[$spdref->{reactive}]/g);
+            push(@{$profile[$-[0]]}, $reactivity[$-[0]]) while($sequence =~ m/[$reactive2]/g);
             
         }
         
