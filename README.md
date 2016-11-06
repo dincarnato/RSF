@@ -16,7 +16,7 @@ Its main features are:
 - Accurate RNA folding prediction by incorporating structural probing data
 
 For updates, please visit: https://rsf.hugef-research.org  
-For support requests, please post your questions to: https://groups.google.com/forum/#!forum/rsftoolkit
+For support requests, please post your questions to: https://groups.google.com/d/forum/rnaframework
 
 
 ## Author
